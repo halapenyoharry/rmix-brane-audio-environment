@@ -121,9 +121,10 @@
             <kbd>Shift+Click</kbd> Add collector<br>
             <kbd>Drag</kbd> Rotate view<br>
             <kbd>Scroll</kbd> Zoom<br>
+            <kbd>F</kbd> Load audio file<br>
             <kbd>A</kbd> Connect to JACK input<br>
-            <kbd>O</kbd> Connect WebSocket output<br>
             <kbd>D</kbd> Demo waves<br>
+            <kbd>O</kbd> Connect WebSocket output<br>
             <kbd>R</kbd> Reset membrane<br>
             <kbd>C</kbd> Clear actuators<br>
             <kbd>M</kbd> Clear collectors
@@ -266,6 +267,10 @@
         let audioStream = null;
         let websocket = null;
         let outputEnabled = false;
+
+        // Audio file playback
+        let audioElement = null;
+        let audioFileMode = false;
 
         // Actuator class
         class Actuator {
@@ -431,39 +436,97 @@
             return collector;
         }
 
+        // Initialize audio file playback
+        function initAudioFile() {
+            // Create hidden file input
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'audio/*';
+
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                console.log('Loading audio file:', file.name);
+
+                // Create audio element if needed
+                if (!audioElement) {
+                    audioElement = new Audio();
+                    audioElement.loop = true;
+                    audioElement.controls = false; // Hidden for now, can add UI later
+                }
+
+                // Create audio context and analyser
+                if (!audioContext) {
+                    audioContext = new AudioContext();
+                }
+
+                if (!audioAnalyser) {
+                    audioAnalyser = audioContext.createAnalyser();
+                    audioAnalyser.fftSize = 256;
+                    audioAnalyser.smoothingTimeConstant = 0.8;
+                    audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                }
+
+                // Load file
+                const url = URL.createObjectURL(file);
+                audioElement.src = url;
+
+                // Connect to analyser
+                const source = audioContext.createMediaElementSource(audioElement);
+                source.connect(audioAnalyser);
+                source.connect(audioContext.destination); // Hear it too
+
+                // Start playback
+                audioElement.play();
+
+                audioFileMode = true;
+                audioEnabled = true;
+                demoMode = false;
+
+                document.getElementById('audio-indicator').textContent = 'FILE';
+                document.getElementById('audio-indicator').style.color = '#00ff00';
+                document.getElementById('mode-display').textContent = 'FILE: ' + file.name.substring(0, 15);
+
+                console.log('Audio file loaded and playing');
+            };
+
+            input.click();
+        }
+
         // Initialize JACK audio through extension
         async function initJackAudio() {
             try {
                 console.log('Requesting JACK audio access...');
-                
+
                 // Check if JACK bridge is available
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const jackDevice = devices.find(d => d.deviceId === 'jack-system-capture');
-                
+
                 if (!jackDevice) {
                     throw new Error('JACK Bridge extension not installed or running');
                 }
-                
+
                 // Request JACK audio stream
                 audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: { deviceId: 'jack-system-capture' }
                 });
-                
+
                 // Create audio context and analyser
                 audioContext = new AudioContext();
                 audioAnalyser = audioContext.createAnalyser();
                 audioAnalyser.fftSize = 256;
                 audioAnalyser.smoothingTimeConstant = 0.8;
-                
+
                 audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
-                
+
                 // Connect stream to analyser
                 const source = audioContext.createMediaStreamSource(audioStream);
                 source.connect(audioAnalyser);
-                
+
                 console.log('JACK audio connected successfully!');
                 return true;
-                
+
             } catch (error) {
                 console.error('Failed to connect to JACK:', error);
                 alert('Failed to connect to JACK audio: ' + error.message + '\n\nMake sure:\n1. Zen JACK Bridge extension is loaded\n2. JACK server is running\n3. zen-jack-bridge client appears in patchbay');
@@ -641,15 +704,22 @@
                     document.getElementById('audio-indicator').style.color = '#ff0000';
                     document.getElementById('mode-display').textContent = 'OFF';
                 }
+            } else if (e.key === 'f' || e.key === 'F') {
+                // Load audio file
+                initAudioFile();
             } else if (e.key === 'd' || e.key === 'D') {
                 // Toggle demo mode
                 demoMode = !demoMode;
                 document.getElementById('mode-display').textContent = demoMode ? 'DEMO' : 'OFF';
-                
+
                 if (demoMode) {
                     audioEnabled = false;
+                    audioFileMode = false;
                     document.getElementById('audio-indicator').textContent = 'OFF';
                     document.getElementById('audio-indicator').style.color = '#ff0000';
+                    if (audioElement) {
+                        audioElement.pause();
+                    }
                 }
             } else if (e.key === 'o' || e.key === 'O') {
                 // Toggle WebSocket output
@@ -721,9 +791,10 @@
         console.log('Controls:');
         console.log('  Click          - Add actuator (solid sphere)');
         console.log('  Shift+Click    - Add collector (wireframe sphere)');
+        console.log('  F              - Load audio file');
         console.log('  A              - Connect JACK input (requires Zen JACK Bridge)');
-        console.log('  O              - Connect WebSocket output (requires bridge server)');
         console.log('  D              - Demo mode (sine waves)');
+        console.log('  O              - Connect WebSocket output (requires bridge server)');
         console.log('  R              - Reset membrane');
         console.log('  C              - Clear actuators');
         console.log('  M              - Clear collectors');
