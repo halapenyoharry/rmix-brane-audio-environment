@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>RMIX - Reality Mixer Audio Environment</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e27;
+            color: #00e5ff;
+            font-family: 'JetBrains Mono', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #status-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(10, 14, 39, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 11px;
+            z-index: 100;
+            min-width: 200px;
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 14, 39, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 11px;
+            z-index: 100;
+            max-width: 300px;
+        }
+
+        .panel-header {
+            color: #18ffff;
+            margin-bottom: 10px;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 12px;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+
+        .status-label {
+            opacity: 0.7;
+        }
+
+        .status-value {
+            color: #18ffff;
+            font-weight: bold;
+        }
+
+        kbd {
+            background: rgba(0, 229, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            margin: 0 2px;
+        }
+
+        .control-row {
+            margin: 8px 0;
+        }
+
+        #mode-selector {
+            margin-top: 15px;
+        }
+
+        button, select {
+            background: rgba(10, 14, 39, 0.8);
+            color: #00e5ff;
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 11px;
+            cursor: pointer;
+            width: 100%;
+            margin: 3px 0;
+        }
+
+        button:hover, select:hover {
+            background: rgba(0, 229, 255, 0.1);
+            border-color: #00e5ff;
+        }
+
+        button.active {
+            background: rgba(0, 229, 255, 0.2);
+            border-color: #18ffff;
+        }
+
+        .source-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .collector-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 5px;
+        }
+
+        #instructions {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(10, 14, 39, 0.9);
+            backdrop-filter: blur(10px);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 10px;
+            z-index: 100;
+            opacity: 0.8;
+            max-width: 400px;
+        }
+
+        .legend {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0, 229, 255, 0.2);
+            display: flex;
+            gap: 15px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="status-panel">
+        <div class="panel-header">RMIX STATUS</div>
+        <div class="status-row">
+            <span class="status-label">JACK:</span>
+            <span class="status-value" id="jack-status">OFF</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Sources:</span>
+            <span class="status-value" id="source-count">0</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Collectors:</span>
+            <span class="status-value" id="collector-count">0</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Physics:</span>
+            <span class="status-value" id="physics-fps">60 FPS</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">GPU:</span>
+            <span class="status-value" id="gpu-usage">1%</span>
+        </div>
+    </div>
+
+    <div id="controls">
+        <div class="panel-header">CONTROLS</div>
+
+        <div id="mode-selector">
+            <div class="control-row">
+                <button id="add-source-btn">Add Source</button>
+            </div>
+            <div class="control-row">
+                <button id="add-collector-btn">Add Collector</button>
+            </div>
+            <div class="control-row">
+                <select id="collector-type">
+                    <option value="omni">Omnidirectional</option>
+                    <option value="cardioid">Cardioid</option>
+                    <option value="figure8">Figure-8</option>
+                    <option value="custom">Custom Shape</option>
+                </select>
+            </div>
+            <div class="control-row">
+                <button id="jack-connect-btn">Connect JACK</button>
+            </div>
+            <div class="control-row">
+                <button id="demo-mode-btn">Demo Mode</button>
+            </div>
+            <div class="control-row">
+                <button id="clear-all-btn">Clear All</button>
+            </div>
+            <div class="control-row">
+                <button id="reset-physics-btn">Reset Physics</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="instructions">
+        <div>
+            <kbd>Click</kbd> Place source/collector
+            <kbd>Shift+Click</kbd> Remove node
+            <kbd>Drag</kbd> Move node
+            <kbd>1-8</kbd> Quick select collector output
+        </div>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="source-indicator" style="background: #ffff00;"></div>
+                <span>Source</span>
+            </div>
+            <div class="legend-item">
+                <div class="collector-indicator" style="border: 2px solid #00ffff; background: transparent;"></div>
+                <span>Omni</span>
+            </div>
+            <div class="legend-item">
+                <div class="collector-indicator" style="border: 2px solid #ff00ff; border-radius: 0; clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);"></div>
+                <span>Cardioid</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
+
+    <!-- Core physics -->
+    <script src="membrane-physics-core.js"></script>
+
+    <script>
+        // RMIX - Reality Mixer Audio Environment
+        // Combining membrane physics with audio sources and collectors
+
+        class RMIXEnvironment {
+            constructor() {
+                this.sources = [];
+                this.collectors = [];
+                this.jackConnected = false;
+                this.demoMode = false;
+                this.audioContext = null;
+                this.audioStream = null;
+                this.placementMode = null; // 'source', 'collector', or null
+
+                // Initialize membrane physics
+                this.membrane = new MembranePhysics({
+                    gridSize: 100,
+                    membraneSize: 100,
+                    waveSpeed: 0.3,
+                    damping: 0.00265,
+                    boundaryType: 'fixed',
+                    boundaryShape: 'square'
+                });
+
+                this.initThreeJS();
+                this.initControls();
+                this.initAudio();
+                this.animate();
+            }
+
+            initThreeJS() {
+                // Scene setup
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x0a0e27);
+
+                // Camera
+                this.camera = new THREE.PerspectiveCamera(
+                    75,
+                    window.innerWidth / window.innerHeight,
+                    0.01,
+                    5000
+                );
+                this.camera.position.set(50, 40, 50);
+                this.camera.lookAt(0, 0, 0);
+
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                document.getElementById('canvas-container').appendChild(this.renderer.domElement);
+
+                // Controls
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0x1a237e, 0.4);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0x00e5ff, 0.6);
+                directionalLight.position.set(100, 100, 50);
+                this.scene.add(directionalLight);
+
+                // Create membrane mesh
+                this.createMembraneMesh();
+
+                // Raycaster for mouse interaction
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+            }
+
+            createMembraneMesh() {
+                const geometry = new THREE.PlaneGeometry(
+                    this.membrane.membraneSize,
+                    this.membrane.membraneSize,
+                    this.membrane.gridSize,
+                    this.membrane.gridSize
+                );
+
+                // Simple material without complex shaders
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x00e5ff,
+                    emissive: 0x001144,
+                    wireframe: false,
+                    side: THREE.DoubleSide
+                });
+
+                this.membraneMesh = new THREE.Mesh(geometry, material);
+                this.membraneMesh.rotation.x = -Math.PI / 2;
+                this.scene.add(this.membraneMesh);
+            }
+
+            initControls() {
+                // Button controls
+                document.getElementById('add-source-btn').addEventListener('click', () => {
+                    this.placementMode = this.placementMode === 'source' ? null : 'source';
+                    this.updateButtonStates();
+                });
+
+                document.getElementById('add-collector-btn').addEventListener('click', () => {
+                    this.placementMode = this.placementMode === 'collector' ? null : 'collector';
+                    this.updateButtonStates();
+                });
+
+                document.getElementById('jack-connect-btn').addEventListener('click', () => {
+                    this.toggleJack();
+                });
+
+                document.getElementById('demo-mode-btn').addEventListener('click', () => {
+                    this.toggleDemoMode();
+                });
+
+                document.getElementById('clear-all-btn').addEventListener('click', () => {
+                    this.clearAll();
+                });
+
+                document.getElementById('reset-physics-btn').addEventListener('click', () => {
+                    this.membrane.reset();
+                });
+
+                // Mouse interaction
+                this.renderer.domElement.addEventListener('click', (event) => {
+                    this.handleClick(event);
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (event) => {
+                    this.handleKeyboard(event);
+                });
+
+                // Window resize
+                window.addEventListener('resize', () => {
+                    this.handleResize();
+                });
+            }
+
+            async initAudio() {
+                // Check for JACK bridge extension
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const hasJack = devices.some(d => d.deviceId === 'jack-system-capture');
+                    if (hasJack) {
+                        console.log('JACK bridge detected');
+                    }
+                } catch (error) {
+                    console.log('Audio device enumeration failed:', error);
+                }
+            }
+
+            handleClick(event) {
+                if (!this.placementMode) return;
+
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObject(this.membraneMesh);
+
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+
+                    if (this.placementMode === 'source') {
+                        this.addSource(point.x, point.z);
+                    } else if (this.placementMode === 'collector') {
+                        const type = document.getElementById('collector-type').value;
+                        this.addCollector(point.x, point.z, type);
+                    }
+                }
+            }
+
+            addSource(x, z) {
+                const source = {
+                    x: x,
+                    z: z,
+                    gridX: Math.round((x / this.membrane.membraneSize + 0.5) * this.membrane.gridSize),
+                    gridY: Math.round((z / this.membrane.membraneSize + 0.5) * this.membrane.gridSize),
+                    phase: Math.random() * Math.PI * 2,
+                    visual: null
+                };
+
+                // Create visual indicator
+                const geometry = new THREE.SphereGeometry(2, 16, 16);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0xffff00,
+                    emissive: 0xffff00,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                source.visual = new THREE.Mesh(geometry, material);
+                source.visual.position.set(x, 3, z);
+                this.scene.add(source.visual);
+
+                this.sources.push(source);
+                document.getElementById('source-count').textContent = this.sources.length;
+            }
+
+            addCollector(x, z, type) {
+                const collector = {
+                    x: x,
+                    z: z,
+                    gridX: Math.round((x / this.membrane.membraneSize + 0.5) * this.membrane.gridSize),
+                    gridY: Math.round((z / this.membrane.membraneSize + 0.5) * this.membrane.gridSize),
+                    type: type,
+                    output: 0,
+                    visual: null
+                };
+
+                // Create visual indicator based on type
+                let geometry, material;
+
+                if (type === 'omni') {
+                    geometry = new THREE.RingGeometry(2, 3, 32);
+                    material = new THREE.MeshBasicMaterial({
+                        color: 0x00ffff,
+                        side: THREE.DoubleSide,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                } else if (type === 'cardioid') {
+                    geometry = new THREE.ConeGeometry(3, 4, 16);
+                    material = new THREE.MeshBasicMaterial({
+                        color: 0xff00ff,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                } else {
+                    geometry = new THREE.BoxGeometry(4, 1, 4);
+                    material = new THREE.MeshBasicMaterial({
+                        color: 0x00ff00,
+                        transparent: true,
+                        opacity: 0.7
+                    });
+                }
+
+                collector.visual = new THREE.Mesh(geometry, material);
+                collector.visual.position.set(x, 3, z);
+                if (type === 'cardioid') {
+                    collector.visual.rotation.x = Math.PI;
+                }
+                this.scene.add(collector.visual);
+
+                this.collectors.push(collector);
+                document.getElementById('collector-count').textContent = this.collectors.length;
+            }
+
+            async toggleJack() {
+                if (!this.jackConnected) {
+                    try {
+                        // Connect to JACK
+                        this.audioStream = await navigator.mediaDevices.getUserMedia({
+                            audio: { deviceId: 'jack-system-capture' }
+                        });
+
+                        this.audioContext = new AudioContext();
+                        const source = this.audioContext.createMediaStreamSource(this.audioStream);
+
+                        this.jackConnected = true;
+                        document.getElementById('jack-status').textContent = 'CONNECTED';
+                        document.getElementById('jack-status').style.color = '#00ff00';
+                        document.getElementById('jack-connect-btn').textContent = 'Disconnect JACK';
+                        document.getElementById('jack-connect-btn').classList.add('active');
+
+                    } catch (error) {
+                        console.error('Failed to connect to JACK:', error);
+                        alert('Failed to connect to JACK. Make sure the bridge is running.');
+                    }
+                } else {
+                    // Disconnect
+                    if (this.audioStream) {
+                        this.audioStream.getTracks().forEach(track => track.stop());
+                    }
+                    if (this.audioContext) {
+                        this.audioContext.close();
+                    }
+
+                    this.jackConnected = false;
+                    document.getElementById('jack-status').textContent = 'OFF';
+                    document.getElementById('jack-status').style.color = '#ff0000';
+                    document.getElementById('jack-connect-btn').textContent = 'Connect JACK';
+                    document.getElementById('jack-connect-btn').classList.remove('active');
+                }
+            }
+
+            toggleDemoMode() {
+                this.demoMode = !this.demoMode;
+                const btn = document.getElementById('demo-mode-btn');
+                if (this.demoMode) {
+                    btn.classList.add('active');
+                    btn.textContent = 'Demo Mode ON';
+                } else {
+                    btn.classList.remove('active');
+                    btn.textContent = 'Demo Mode';
+                }
+            }
+
+            clearAll() {
+                // Remove all sources
+                this.sources.forEach(source => {
+                    if (source.visual) this.scene.remove(source.visual);
+                });
+                this.sources = [];
+                document.getElementById('source-count').textContent = '0';
+
+                // Remove all collectors
+                this.collectors.forEach(collector => {
+                    if (collector.visual) this.scene.remove(collector.visual);
+                });
+                this.collectors = [];
+                document.getElementById('collector-count').textContent = '0';
+
+                // Reset physics
+                this.membrane.reset();
+            }
+
+            updateButtonStates() {
+                const sourceBtn = document.getElementById('add-source-btn');
+                const collectorBtn = document.getElementById('add-collector-btn');
+
+                sourceBtn.classList.toggle('active', this.placementMode === 'source');
+                collectorBtn.classList.toggle('active', this.placementMode === 'collector');
+
+                sourceBtn.textContent = this.placementMode === 'source' ? 'Placing Sources...' : 'Add Source';
+                collectorBtn.textContent = this.placementMode === 'collector' ? 'Placing Collectors...' : 'Add Collector';
+            }
+
+            handleKeyboard(event) {
+                if (event.key === 'Escape') {
+                    this.placementMode = null;
+                    this.updateButtonStates();
+                } else if (event.key === 's') {
+                    this.placementMode = 'source';
+                    this.updateButtonStates();
+                } else if (event.key === 'c') {
+                    this.placementMode = 'collector';
+                    this.updateButtonStates();
+                } else if (event.key === 'r') {
+                    this.membrane.reset();
+                }
+            }
+
+            handleResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            updateMembraneMesh() {
+                const positions = this.membraneMesh.geometry.attributes.position.array;
+                const gridSize = this.membrane.gridSize;
+
+                for (let i = 0; i <= gridSize; i++) {
+                    for (let j = 0; j <= gridSize; j++) {
+                        const index = (i * (gridSize + 1) + j) * 3 + 2;
+                        positions[index] = this.membrane.heights[i][j] * 20; // Scale for visibility
+                    }
+                }
+
+                this.membraneMesh.geometry.attributes.position.needsUpdate = true;
+                this.membraneMesh.geometry.computeVertexNormals();
+            }
+
+            applySourcesAndCollectors() {
+                // Apply sources to membrane
+                const time = Date.now() * 0.001;
+
+                this.sources.forEach(source => {
+                    if (this.demoMode) {
+                        // Demo wave
+                        const force = Math.sin(time * 5 + source.phase) * 2;
+                        this.membrane.applyForce(source.x, source.z, force);
+                    }
+
+                    // Animate source visual
+                    if (source.visual) {
+                        source.visual.scale.setScalar(1 + Math.sin(time * 10) * 0.1);
+                    }
+                });
+
+                // Sample collectors
+                this.collectors.forEach(collector => {
+                    if (collector.gridX >= 0 && collector.gridX <= this.membrane.gridSize &&
+                        collector.gridY >= 0 && collector.gridY <= this.membrane.gridSize) {
+
+                        // Sample membrane at collector position
+                        const height = this.membrane.heights[collector.gridX][collector.gridY];
+                        collector.output = height;
+
+                        // Visual feedback
+                        if (collector.visual) {
+                            collector.visual.position.y = 3 + height * 10;
+                        }
+                    }
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+
+                // Update physics
+                this.applySourcesAndCollectors();
+                this.membrane.updatePhysics();
+                this.updateMembraneMesh();
+
+                // Update controls
+                this.controls.update();
+
+                // Render
+                this.renderer.render(this.scene, this.camera);
+
+                // Update FPS counter periodically
+                if (Date.now() % 500 < 16) {
+                    const fps = Math.round(1000 / 16);
+                    document.getElementById('physics-fps').textContent = fps + ' FPS';
+                }
+            }
+        }
+
+        // Initialize RMIX environment
+        const rmix = new RMIXEnvironment();
+
+        console.log('🌊 RMIX - Reality Mixer Audio Environment');
+        console.log('Click to place sources and collectors');
+        console.log('Connect JACK for audio I/O');
+    </script>
+</body>
+</html>

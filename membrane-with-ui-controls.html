@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Audio-Reactive Membrane - JACK Input</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e27; /* midnight alaska */
+            color: #00e5ff; /* intense cyan */
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Equation container - now in toolbar */
+        #equation-container {
+            color: #00e5ff;
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;  /* Never wrap formula */
+            display: flex;
+            align-items: center;
+            pointer-events: auto;
+        }
+
+        #equation {
+            font-size: 16px;  /* 60% of original size */
+            color: #00e5ff;
+            letter-spacing: 1px;
+            font-weight: 300;
+            text-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .equation-part {
+            display: inline-block;
+            position: relative;
+            transition: all 0.3s ease;
+            cursor: default;
+        }
+
+        .equation-part.variable {
+            cursor: pointer;
+            border-bottom: 1px dotted rgba(0, 229, 255, 0.3);
+            position: relative;
+        }
+
+        .equation-part.variable:hover {
+            color: #18ffff;
+            border-bottom-color: #18ffff;
+            transform: translateY(-2px);
+            text-shadow: 0 0 30px rgba(24, 255, 255, 0.5);
+        }
+
+        /* Fixed: Parameter control stays visible while adjusting */
+        .parameter-control {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-15px);
+            background: rgba(10, 14, 39, 0.95);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px 20px;
+            display: none;
+            min-width: 250px;
+            z-index: 1000;
+            box-shadow: 0 -4px 30px rgba(0, 229, 255, 0.2);
+        }
+
+        .parameter-control.active {
+            display: block;
+        }
+
+        .parameter-control label {
+            font-size: 12px;
+            color: #00d4ee;
+            display: block;
+            margin-bottom: 10px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .parameter-control input[type="range"] {
+            width: 100%;
+            margin-bottom: 10px;
+            background: transparent;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #1a237e, #00e5ff);
+            outline: none;
+        }
+
+        .parameter-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #00e5ff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.8);
+        }
+
+        .parameter-value {
+            text-align: center;
+            color: #18ffff;
+            font-size: 16px;
+            font-weight: 400;
+            text-shadow: 0 0 10px rgba(24, 255, 255, 0.5);
+        }
+
+        /* Mathematical notation */
+        .frac {
+            display: inline-block;
+            vertical-align: middle;
+            text-align: center;
+            margin: 0 3px;
+        }
+
+        .frac-num, .frac-den {
+            display: block;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        .frac-num {
+            border-bottom: 1px solid currentColor;
+            padding-bottom: 3px;
+        }
+
+        .frac-den {
+            padding-top: 3px;
+        }
+
+        sup {
+            font-size: 0.65em;
+            vertical-align: super;
+        }
+
+        /* Top controls in Harold style */
+
+        /* Instructions */
+        #instructions {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(10, 14, 39, 0.85);
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+            line-height: 1.8;
+        }
+
+        #instructions h3 {
+            color: #18ffff;
+            margin-bottom: 10px;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #instructions kbd {
+            background: rgba(26, 35, 126, 0.4);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            margin: 0 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="instructions">
+        <div>
+            <kbd>Click</kbd> Add actuator<br>
+            <kbd>Drag</kbd> Rotate view<br>
+            <kbd>Scroll</kbd> Zoom<br>
+            <kbd>A</kbd> Toggle audio input<br>
+            <kbd>G</kbd> Global gain +/-<br>
+            <kbd>R</kbd>/<kbd>Esc</kbd> Reset waves<br>
+            <kbd>H</kbd> Hide/Show equations
+        </div>
+
+        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(0, 229, 255, 0.2); font-size: 11px; line-height: 1.5; opacity: 0.8;">
+                <div><b>u</b> = displacement (height)</div>
+                <div><b>t</b> = time (seconds)</div>
+                <div><b>c</b> = wave speed = √(T/ρ)</div>
+                <div style="margin-left: 12px; opacity: 0.7;">T = tension, ρ = density</div>
+                <div><b>∇²</b> = Laplacian (curvature)</div>
+                <div><b>∂/∂t</b> = rate of change</div>
+                <div><b>∂²/∂t²</b> = acceleration</div>
+                <div><b>γ</b> = damping (1/s)</div>
+                <div><b>∂u/∂n</b> = normal derivative</div>
+                <div style="margin-left: 12px; opacity: 0.7;">(perpendicular slope)</div>
+        </div>
+    </div>
+
+
+    <div id="equation-container">
+        <div id="equation">
+            <span class="equation-part">
+                <span class="frac">
+                    <span class="frac-num">∂<sup>2</sup>u</span>
+                    <span class="frac-den">∂t<sup>2</sup></span>
+                </span>
+            </span>
+            <span class="equation-part"> = </span>
+            <span class="equation-part variable" data-param="c" data-control="c-control">
+                <span id="c-value">c</span><sup>2</sup>
+                <div class="parameter-control" id="c-control">
+                    <label>Wave Speed: c = √(T/ρ)</label>
+                    <input type="range" id="c-slider" min="0.05" max="0.8" value="0.3" step="0.01">
+                    <div class="parameter-value" id="c-display">0.30</div>
+                </div>
+            </span>
+            <span class="equation-part">∇<sup>2</sup>u = </span>
+            <span class="equation-part variable" data-param="c2" data-control="c2-control">
+                <span id="c2-value">c</span><sup>2</sup>
+                <div class="parameter-control" id="c2-control">
+                    <label>Wave Speed Squared</label>
+                    <input type="range" id="c2-slider" min="0.0025" max="0.64" value="0.09" step="0.001">
+                    <div class="parameter-value" id="c2-display">0.090</div>
+                </div>
+            </span>
+            <span class="equation-part">
+                (<span class="frac">
+                    <span class="frac-num">∂<sup>2</sup>u</span>
+                    <span class="frac-den">∂x<sup>2</sup></span>
+                </span>
+                 +
+                <span class="frac">
+                    <span class="frac-num">∂<sup>2</sup>u</span>
+                    <span class="frac-den">∂y<sup>2</sup></span>
+                </span>)
+            </span>
+            <span class="equation-part variable" data-param="damping" data-control="damping-control" style="margin-left: 10px;">
+                <span id="damping-term" style="opacity: 0.5;">&minus; &gamma;</span>
+                <span class="frac" style="opacity: 0.5;">
+                    <span class="frac-num">&part;u</span>
+                    <span class="frac-den">&part;t</span>
+                </span>
+                <div class="parameter-control" id="damping-control">
+                    <label>Damping: γ</label>
+                    <input type="range" id="damping-slider" min="0" max="0.01" value="0.00265" step="0.0001">
+                    <div class="parameter-value" id="damping-display">0.00265</div>
+                </div>
+            </span>
+        </div>
+    </div>
+
+    <!-- Audio Status -->
+    <div id="audio-status" style="
+        position: fixed;
+        top: 30px;
+        left: 30px;
+        background: rgba(10, 14, 39, 0.85);
+        backdrop-filter: blur(20px);
+        padding: 15px;
+        border-radius: 12px;
+        border: 2px solid rgba(0, 229, 255, 0.2);
+        box-shadow: 0 0 40px rgba(0, 229, 255, 0.1);
+        z-index: 100;
+        color: #00e5ff;
+        font-size: 12px;
+    ">
+        <div style="margin-bottom: 8px;">
+            <span style="font-weight: bold;">AUDIO:</span>
+            <span id="audio-indicator" style="color: #ff0000;">OFF</span>
+        </div>
+        <div style="margin-bottom: 8px;">
+            <span>GAIN:</span>
+            <span id="gain-display">1.0</span>
+        </div>
+        <div>
+            <span>ACTUATORS:</span>
+            <span id="actuator-count">0</span>
+        </div>
+        <div style="margin-top: 10px; font-size: 10px; opacity: 0.7;">
+            <div style="display: inline-block; width: 12px; height: 12px; background: #ff00ff; margin-right: 5px;"></div>LEFT
+            <div style="display: inline-block; width: 12px; height: 12px; background: #00ffff; margin: 0 5px;"></div>RIGHT
+            <div style="display: inline-block; width: 12px; height: 12px; background: #ffff00; margin: 0 5px;"></div>MONO
+        </div>
+    </div>
+
+    <!-- Visual Controls -->
+    <div id="appearance-control" style="
+        position: fixed;
+        top: 30px;
+        right: 30px;
+        background: rgba(10, 14, 39, 0.85);
+        backdrop-filter: blur(20px);
+        padding: 15px;
+        border-radius: 12px;
+        border: 2px solid rgba(0, 229, 255, 0.2);
+        box-shadow: 0 0 40px rgba(0, 229, 255, 0.1);
+        z-index: 100;
+        color: #00e5ff;
+        font-size: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+    ">
+        <!-- Mesh density visual control -->
+        <canvas id="mesh-control" width="80" height="80" style="
+            border: 2px solid rgba(0, 229, 255, 0.4);
+            border-radius: 8px;
+            cursor: pointer;
+            display: block;
+        "></canvas>
+
+        <!-- Color controls -->
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <div style="text-align: center;">
+                <input type="color" id="color-negative" value="#00ffff" style="
+                    width: 35px;
+                    height: 35px;
+                    border: 1px solid rgba(0, 229, 255, 0.3);
+                    border-radius: 50%;
+                    background: transparent;
+                    cursor: pointer;
+                    display: block;
+                ">
+                <span style="font-size: 9px; opacity: 0.6; margin-top: 2px; display: block;">trough</span>
+            </div>
+            <div id="color-gradient" style="
+                width: 60px;
+                height: 12px;
+                background: linear-gradient(to right, #0000ff, #00ff00);
+                border-radius: 6px;
+                border: 1px solid rgba(0, 229, 255, 0.2);
+            "></div>
+            <div style="text-align: center;">
+                <input type="color" id="color-positive" value="#ff00ff" style="
+                    width: 35px;
+                    height: 35px;
+                    border: 1px solid rgba(0, 229, 255, 0.3);
+                    border-radius: 50%;
+                    background: transparent;
+                    cursor: pointer;
+                    display: block;
+                ">
+                <span style="font-size: 9px; opacity: 0.6; margin-top: 2px; display: block;">peak</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Toolbar -->
+    <div id="bottom-toolbar" style="
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 100px;
+        background: linear-gradient(to top, rgba(10, 14, 39, 0.95), rgba(10, 14, 39, 0));
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 30px;
+        z-index: 100;
+        pointer-events: none;
+    ">
+        <!-- Formula Section (Left) -->
+        <div id="formula-section" style="
+            display: flex;
+            align-items: center;
+            pointer-events: auto;
+            flex: 0 0 auto;
+        ">
+            <!-- Formula will be moved here -->
+        </div>
+
+        <!-- Frequency Visualizer (Center) -->
+        <div id="frequency-visualizer" style="
+            width: 225px;
+            height: 225px;
+            position: absolute;
+            left: 50%;
+            bottom: 10px;
+            transform: translateX(-50%);
+            pointer-events: auto;
+        ">
+            <canvas id="freq-canvas" width="225" height="225" style="
+                width: 100%;
+                height: 100%;
+                cursor: pointer;
+            "></canvas>
+        </div>
+
+        <!-- Controls Section (Right) -->
+        <div id="controls-section" style="
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            pointer-events: auto;
+        ">
+            <!-- Boundary control -->
+            <canvas id="boundary-control" width="80" height="80" style="
+                cursor: ns-resize;
+                filter: drop-shadow(0 0 20px rgba(0, 229, 255, 0.3));
+            "></canvas>
+        </div>
+    </div>
+
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
+    <script>
+        // Move equation to toolbar
+        document.addEventListener('DOMContentLoaded', () => {
+            const equationContainer = document.getElementById('equation-container');
+            const formulaSection = document.getElementById('formula-section');
+            if (equationContainer && formulaSection) {
+                formulaSection.appendChild(equationContainer);
+            }
+        });
+
+        // Scene setup with Harold's midnight alaska aesthetic
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0e27);
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.01,  // Near plane closer
+            5000   // Far plane much further
+        );
+        camera.position.set(50, 40, 50);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            canvas: document.createElement('canvas')
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Lighting optimized for Harold's colors
+        const ambientLight = new THREE.AmbientLight(0x1a237e, 0.4); // horizon glow ambient
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0x00e5ff, 0.6); // cyan light
+        directionalLight.position.set(100, 100, 50);
+        scene.add(directionalLight);
+
+        // 3D Membrane with Harold's colors
+        let gridSize = 100;  // Default grid resolution
+        const membraneSize = 100;  // Standard membrane size
+        let geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+
+        // Custom shader material for Harold's aesthetic
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                waveHeight: { value: 20.0 },
+                colorNegative: { value: new THREE.Color(0x00ffff) }, // cyan at trough
+                colorPositive: { value: new THREE.Color(0xff00ff) }, // magenta at peak
+                opacity: { value: 1.0 }  // Full opacity for clarity
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying float vHeight;
+
+                void main() {
+                    vPosition = position;
+                    vHeight = position.z;
+                    vNormal = normal;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 colorNegative;
+                uniform vec3 colorPositive;
+                uniform float opacity;
+                uniform float time;
+
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying float vHeight;
+
+                void main() {
+                    // Map height from -10 to +10 to 0-1
+                    float t = (vHeight + 10.0) / 20.0;
+                    t = clamp(t, 0.0, 1.0);
+
+                    // Linear interpolation between negative and positive colors
+                    vec3 color = mix(colorNegative, colorPositive, t);
+
+                    // Simple lighting
+                    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                    float diff = max(dot(vNormal, lightDir), 0.0);
+                    color *= (0.7 + diff * 0.3);
+
+                    gl_FragColor = vec4(color, opacity);
+                }
+            `,
+            transparent: false,  // Disabled transparency to fix viewing angle issues
+            side: THREE.DoubleSide,
+            wireframe: false,
+            depthWrite: true,
+            depthTest: true
+        });
+
+        let membrane = new THREE.Mesh(geometry, material);
+        membrane.rotation.x = -Math.PI / 2;
+        scene.add(membrane);
+
+        // Physics arrays
+        let heights = [];
+        let velocities = [];
+        let waveSpeed = 0.3;
+        let damping = 0.00265;  // Spacetime impedance (1/376.7Ω)
+        let boundaryType = 'fixed';
+        let boundaryShape = 'square';
+
+        function initializeArrays() {
+            heights = new Array(gridSize + 1);
+            velocities = new Array(gridSize + 1);
+            for (let i = 0; i <= gridSize; i++) {
+                heights[i] = new Array(gridSize + 1).fill(0);
+                velocities[i] = new Array(gridSize + 1).fill(0);
+            }
+        }
+
+        // Actuator system for audio input
+        let actuators = [];
+        let audioContext = null;
+        let audioAnalyser = null;
+        let audioDataArray = null;
+        let audioSource = null;
+        let globalGain = 1.0;
+        let audioEnabled = false;
+
+        // Actuator class
+        class Actuator {
+            constructor(x, y, channel = 'left') {
+                this.x = x;
+                this.y = y;
+                // Convert from Three.js world coords (-50 to +50) to grid coords (0 to gridSize)
+                // Note: Swapping X/Y because membrane is rotated 90 degrees
+                this.gridX = Math.round(((y + membraneSize/2) / membraneSize) * gridSize);
+                this.gridY = Math.round(((x + membraneSize/2) / membraneSize) * gridSize);
+                this.channel = channel; // 'left', 'right', or 'mono'
+                this.gain = 1.0;
+                this.visual = null;
+            }
+
+            apply() {
+                if (!audioEnabled || !jackAudioData.left.length) return;
+
+                // Get audio sample based on channel
+                let sample = 0;
+
+                // If this actuator has a frequency band, use that band's amplitude
+                if (this.frequencyBand !== undefined) {
+                    const amplitude = frequencyBands[this.frequencyBand] || 0;
+                    // Convert amplitude to sample value centered at 128 (no force)
+                    sample = 128 + (amplitude * 127); // 128 is center, amplitude adds/subtracts
+                } else {
+                    // Standard channel-based sampling
+                    if (this.channel === 'left') {
+                        sample = jackAudioData.left[0] || 128; // Left channel
+                    } else if (this.channel === 'right') {
+                        sample = jackAudioData.right[0] || 128; // Right channel
+                    } else {
+                        sample = ((jackAudioData.left[0] || 128) + (jackAudioData.right[0] || 128)) / 2; // Mono mix
+                    }
+                }
+
+                // Normalize and apply to velocity
+                const force = (sample / 128.0 - 1.0) * this.gain * globalGain * 10;
+
+                // Apply force to membrane at actuator position
+                if (this.gridX >= 0 && this.gridX <= gridSize &&
+                    this.gridY >= 0 && this.gridY <= gridSize) {
+                    velocities[this.gridX][this.gridY] += force * 0.1;
+                }
+            }
+        }
+
+        // WebSocket connection to JACK audio server
+        let websocket = null;
+        let jackAudioData = { left: [], right: [] };
+
+        // Frequency analyzer setup
+        const NUM_BANDS = 30;
+        let frequencyBands = new Array(NUM_BANDS).fill(0);
+        let frequencyHistory = new Array(NUM_BANDS).fill(0).map(() => []);
+        const HISTORY_LENGTH = 10;
+
+        // Frequency ranges (log scale from 20Hz to 20kHz)
+        const MIN_FREQ = 20;
+        const MAX_FREQ = 20000;
+        const freqScale = (band) => {
+            const logMin = Math.log10(MIN_FREQ);
+            const logMax = Math.log10(MAX_FREQ);
+            const logFreq = logMin + (band / NUM_BANDS) * (logMax - logMin);
+            return Math.pow(10, logFreq);
+        };
+
+        // Initialize WebSocket connection to JACK
+        async function initAudio() {
+            try {
+                // Try to connect to JACK server - adjust host as needed
+                // Use ?audio=192.168.1.3 in URL to specify audio server
+                const urlParams = new URLSearchParams(window.location.search);
+                const audioHost = urlParams.get('audio') || window.location.hostname || 'localhost';
+                console.log(`Connecting to JACK server at ${audioHost}:8889`);
+                websocket = new WebSocket(`ws://${audioHost}:8889`);
+
+                websocket.onopen = () => {
+                    console.log('Connected to JACK audio server');
+                };
+
+                websocket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'audio') {
+                        jackAudioData.left = data.left;
+                        jackAudioData.right = data.right;
+                    }
+                };
+
+                websocket.onclose = () => {
+                    console.log('Disconnected from JACK audio server');
+                };
+
+                websocket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+
+                console.log('Audio initialized - connect JACK sources to math-thing-audio:input_L/R');
+                return true;
+            } catch (err) {
+                console.error('Audio init failed:', err);
+                alert('Could not connect to JACK audio server. Make sure jack-audio-server.py is running.');
+                return false;
+            }
+        }
+
+        // Add actuator at position
+        function addActuator(x, y, channel = 'left') {
+            const actuator = new Actuator(x, y, channel);
+            actuators.push(actuator);
+
+            // Create visual indicator
+            const indicator = new THREE.Mesh(
+                new THREE.SphereGeometry(2, 16, 16),
+                new THREE.MeshBasicMaterial({
+                    color: channel === 'left' ? 0xff00ff : (channel === 'right' ? 0x00ffff : 0xffff00),
+                    emissive: channel === 'left' ? 0xff00ff : (channel === 'right' ? 0x00ffff : 0xffff00),
+                    emissiveIntensity: 0.5,
+                    transparent: true,
+                    opacity: 0.7  // Slightly more transparent
+                })
+            );
+            indicator.position.set(x, 5, y);
+            scene.add(indicator);
+            actuator.visual = indicator;
+
+            console.log(`Added ${channel} actuator at (${x}, ${y})`);
+            return actuator;  // Return the actuator for further configuration
+        }
+
+        // Strike force (fixed, no longer user-controlled)
+        let strikeForce = 2.0;
+
+        // Strike the membrane (kept for compatibility)
+        function strikeMembrane(x, y, force = strikeForce, radius = 6) {
+            // Use consistent membrane size for coordinate conversion
+            const gridX = Math.round((x / membraneSize + 0.5) * gridSize);
+            const gridY = Math.round((y / membraneSize + 0.5) * gridSize);
+
+            for (let i = -radius; i <= radius; i++) {
+                for (let j = -radius; j <= radius; j++) {
+                    const gi = gridX + i;
+                    const gj = gridY + j;
+
+                    if (gi >= 0 && gi <= gridSize && gj >= 0 && gj <= gridSize) {
+                        const dist2 = i * i + j * j;
+                        const gaussian = Math.exp(-dist2 / (radius * radius * 0.5));
+                        velocities[gi][gj] += force * gaussian * 0.1;
+                    }
+                }
+            }
+        }
+
+        // Update physics
+        function updatePhysics() {
+            const newHeights = new Array(gridSize + 1).fill(0).map(() => new Array(gridSize + 1).fill(0));
+
+            // Wave equation
+            for (let i = 1; i < gridSize; i++) {
+                for (let j = 1; j < gridSize; j++) {
+                    const laplacian = (
+                        heights[i + 1][j] + heights[i - 1][j] +
+                        heights[i][j + 1] + heights[i][j - 1] -
+                        4 * heights[i][j]
+                    );
+
+                    velocities[i][j] += waveSpeed * waveSpeed * laplacian;
+                    velocities[i][j] *= (1 - damping);
+                    newHeights[i][j] = heights[i][j] + velocities[i][j];
+                }
+            }
+
+            // Apply boundary conditions based on type and shape
+            if (boundaryType === 'infinite') {
+                // Absorbing boundary conditions - only at the very edge
+                // Gradually absorb energy in the last few units before the edge
+                const absorbWidth = 2; // Very thin layer at edges
+
+                for (let i = 0; i <= gridSize; i++) {
+                    for (let j = 0; j <= gridSize; j++) {
+                        let damping = 1.0; // No damping by default
+
+                        // Calculate distance from nearest edge
+                        const distFromLeft = i;
+                        const distFromRight = gridSize - i;
+                        const distFromTop = j;
+                        const distFromBottom = gridSize - j;
+                        const minDist = Math.min(distFromLeft, distFromRight, distFromTop, distFromBottom);
+
+                        // Apply absorption only in the last 2 units before edge
+                        if (minDist < absorbWidth) {
+                            // Smooth absorption: 1.0 at absorbWidth, 0.1 at edge
+                            damping = 0.1 + 0.9 * (minDist / absorbWidth);
+                        }
+
+                        velocities[i][j] *= damping;
+                    }
+                }
+            } else if (boundaryShape === 'circle') {
+                // Circular boundary
+                const centerX = gridSize / 2;
+                const centerY = gridSize / 2;
+                const radius = gridSize / 2;
+
+                for (let i = 0; i <= gridSize; i++) {
+                    for (let j = 0; j <= gridSize; j++) {
+                        const dist = Math.sqrt((i - centerX) ** 2 + (j - centerY) ** 2);
+                        if (dist > radius - 10) {
+                            const fade = Math.max(0, (radius - dist) / 10);
+                            if (boundaryType === 'fixed') {
+                                newHeights[i][j] *= fade;  // Fixed at 0
+                                velocities[i][j] *= fade;
+                            } else if (boundaryType === 'free') {
+                                // Free boundary - maintain gradient
+                                newHeights[i][j] *= fade;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Square boundary
+                if (boundaryType === 'fixed') {
+                    for (let i = 0; i <= gridSize; i++) {
+                        newHeights[0][i] = 0;  // Fixed at 0
+                        newHeights[gridSize][i] = 0;
+                        newHeights[i][0] = 0;
+                        newHeights[i][gridSize] = 0;
+                    }
+                } else if (boundaryType === 'free') {
+                    // Semi-free boundary - blend between free and fixed based on stiffness
+                    for (let i = 1; i < gridSize; i++) {
+                        newHeights[0][i] = newHeights[1][i] * (1 - boundaryStiffness);
+                        newHeights[gridSize][i] = newHeights[gridSize-1][i] * (1 - boundaryStiffness);
+                        newHeights[i][0] = newHeights[i][1] * (1 - boundaryStiffness);
+                        newHeights[i][gridSize] = newHeights[i][gridSize-1] * (1 - boundaryStiffness);
+                    }
+                    // Handle corners
+                    newHeights[0][0] = newHeights[1][1] * (1 - boundaryStiffness);
+                    newHeights[0][gridSize] = newHeights[1][gridSize-1] * (1 - boundaryStiffness);
+                    newHeights[gridSize][0] = newHeights[gridSize-1][1] * (1 - boundaryStiffness);
+                    newHeights[gridSize][gridSize] = newHeights[gridSize-1][gridSize-1] * (1 - boundaryStiffness);
+                }
+            }
+
+            heights = newHeights;
+
+            // Update geometry
+            const positions = membrane.geometry.attributes.position.array;
+
+            for (let i = 0; i <= gridSize; i++) {
+                for (let j = 0; j <= gridSize; j++) {
+                    const index = (i * (gridSize + 1) + j) * 3 + 2;
+                    positions[index] = heights[i][j] * material.uniforms.waveHeight.value;
+                }
+            }
+
+            membrane.geometry.attributes.position.needsUpdate = true;
+            membrane.geometry.computeVertexNormals();
+        }
+
+        // Fixed: Keep parameter controls visible while adjusting
+        let activeControl = null;
+
+        document.querySelectorAll('.equation-part.variable').forEach(element => {
+            const controlId = element.dataset.control;
+            const control = document.getElementById(controlId);
+
+            // Show on hover
+            element.addEventListener('mouseenter', () => {
+                if (activeControl && activeControl !== control) {
+                    activeControl.classList.remove('active');
+                }
+                control.classList.add('active');
+                activeControl = control;
+            });
+
+            // Keep visible when moving to control
+            control.addEventListener('mouseenter', () => {
+                control.classList.add('active');
+                activeControl = control;
+            });
+
+            // Hide when leaving both element and control
+            control.addEventListener('mouseleave', (e) => {
+                if (!element.contains(e.relatedTarget)) {
+                    control.classList.remove('active');
+                    activeControl = null;
+                }
+            });
+
+            element.addEventListener('mouseleave', (e) => {
+                if (!control.contains(e.relatedTarget)) {
+                    setTimeout(() => {
+                        if (!control.matches(':hover')) {
+                            control.classList.remove('active');
+                            activeControl = null;
+                        }
+                    }, 100);
+                }
+            });
+        });
+
+        // Parameter controls
+        document.getElementById('c-slider').addEventListener('input', (e) => {
+            waveSpeed = parseFloat(e.target.value);
+            document.getElementById('c-display').textContent = waveSpeed.toFixed(2);
+            document.getElementById('c-value').textContent = waveSpeed.toFixed(2);
+            document.getElementById('c2-value').textContent = waveSpeed.toFixed(2);
+
+            const c2 = waveSpeed * waveSpeed;
+            document.getElementById('c2-slider').value = c2;
+            document.getElementById('c2-display').textContent = c2.toFixed(3);
+        });
+
+        document.getElementById('c2-slider').addEventListener('input', (e) => {
+            const c2 = parseFloat(e.target.value);
+            waveSpeed = Math.sqrt(c2);
+            document.getElementById('c2-display').textContent = c2.toFixed(3);
+            document.getElementById('c-display').textContent = waveSpeed.toFixed(2);
+            document.getElementById('c-value').textContent = waveSpeed.toFixed(2);
+            document.getElementById('c2-value').textContent = waveSpeed.toFixed(2);
+            document.getElementById('c-slider').value = waveSpeed;
+        });
+
+        document.getElementById('damping-slider').addEventListener('input', (e) => {
+            damping = parseFloat(e.target.value);
+            document.getElementById('damping-display').textContent = damping.toFixed(4);
+
+            const dampingTerm = document.getElementById('damping-term');
+            const dampingFrac = dampingTerm.nextElementSibling;
+            const opacity = damping > 0 ? 1 : 0.3;
+            dampingTerm.style.opacity = opacity;
+            dampingFrac.style.opacity = opacity;
+        });
+
+
+        // Update boundary equation display
+        function updateBoundaryDisplay() {
+            // This function is called but no longer needed since we removed the boundary display
+            return;
+        }
+
+
+
+        // Mouse interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        renderer.domElement.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // First check if clicking on an actuator
+            const actuatorMeshes = actuators.map(a => a.visual).filter(v => v);
+            const actuatorIntersects = raycaster.intersectObjects(actuatorMeshes);
+
+            if (actuatorIntersects.length > 0) {
+                // Remove the clicked actuator
+                const clickedMesh = actuatorIntersects[0].object;
+                const index = actuators.findIndex(a => a.visual === clickedMesh);
+                if (index !== -1) {
+                    scene.remove(actuators[index].visual);
+                    actuators.splice(index, 1);
+                    document.getElementById('actuator-count').textContent = actuators.length;
+                    console.log('Removed actuator');
+                }
+                return;
+            }
+
+            // Otherwise check if clicking on membrane to add new actuator
+            const intersects = raycaster.intersectObject(membrane);
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+
+                // Determine channel based on position (left side = left, right side = right)
+                let channel = 'mono';
+                if (point.x < -membraneSize * 0.2) {
+                    channel = 'left';
+                } else if (point.x > membraneSize * 0.2) {
+                    channel = 'right';
+                }
+
+                // Add actuator at click position
+                addActuator(point.x, point.z, channel);
+
+                // Update actuator count display
+                document.getElementById('actuator-count').textContent = actuators.length;
+            }
+        });
+
+        // UI visibility state
+        let uiHidden = false;
+
+        // Keyboard controls
+        document.addEventListener('keydown', async (e) => {
+            if (e.key === 'a' || e.key === 'A') {
+                e.preventDefault();
+                // Toggle audio input
+                if (!audioEnabled) {
+                    const success = await initAudio();
+                    if (success) {
+                        audioEnabled = true;
+                        document.getElementById('audio-indicator').textContent = 'ON';
+                        document.getElementById('audio-indicator').style.color = '#00ff00';
+                        console.log('Audio enabled');
+                    }
+                } else {
+                    audioEnabled = false;
+                    document.getElementById('audio-indicator').textContent = 'OFF';
+                    document.getElementById('audio-indicator').style.color = '#ff0000';
+                    console.log('Audio disabled');
+                }
+            } else if (e.key === 'g' || e.key === 'G') {
+                // Adjust global gain
+                if (e.shiftKey) {
+                    globalGain = Math.min(5.0, globalGain * 1.2);
+                } else {
+                    globalGain = Math.max(0.1, globalGain / 1.2);
+                }
+                document.getElementById('gain-display').textContent = globalGain.toFixed(2);
+                console.log('Global gain:', globalGain.toFixed(2));
+            } else if (e.key === 'c' || e.key === 'C') {
+                // Clear all actuators
+                actuators.forEach(act => {
+                    if (act.visual) scene.remove(act.visual);
+                });
+                actuators = [];
+                console.log('Cleared all actuators');
+            } else if (e.key === 'r' || e.key === 'R' || e.key === 'Escape') {
+                initializeArrays();
+            } else if (e.key === 'h' && !e.shiftKey) {
+                // 'h' toggles both equations and instructions visibility
+                e.preventDefault();
+                const equationContainer = document.getElementById('equation-container');
+                const boundaryControl = document.getElementById('boundary-control');
+                const instructions = document.getElementById('instructions');
+                const isHidden = equationContainer.style.display === 'none';
+
+                equationContainer.style.display = isHidden ? 'block' : 'none';
+                // Keep boundary control always visible in toolbar
+                instructions.style.display = isHidden ? 'block' : 'none';
+            }
+        });
+
+        // Visual mesh control
+        const meshControl = document.getElementById('mesh-control');
+        const meshCtx = meshControl.getContext('2d');
+        const colorNegative = document.getElementById('color-negative');
+        const colorPositive = document.getElementById('color-positive');
+        const colorGradient = document.getElementById('color-gradient');
+
+        let meshDensity = gridSize; // Start with same as initial grid
+        let meshVisible = false; // Start with mesh off
+        let isDragging = false;
+        let dragStartY = 0;
+        let dragStartDensity = 0;
+
+        function drawMeshPreview() {
+            meshCtx.clearRect(0, 0, 80, 80);
+
+            // Draw background
+            meshCtx.fillStyle = '#0a0e27';
+            meshCtx.fillRect(0, 0, 80, 80);
+
+            // Draw grid lines
+            const gridSize = Math.min(Math.max(Math.floor(meshDensity / 2.5), 4), 40);
+            const cellSize = 80 / gridSize;
+
+            meshCtx.strokeStyle = meshVisible ? '#00e5ff' : 'rgba(0, 229, 255, 0.3)';
+            meshCtx.lineWidth = meshVisible ? 1 : 0.5;
+            meshCtx.beginPath();
+
+            // Vertical lines
+            for (let i = 0; i <= gridSize; i++) {
+                const x = i * cellSize;
+                meshCtx.moveTo(x, 0);
+                meshCtx.lineTo(x, 80);
+            }
+
+            // Horizontal lines
+            for (let i = 0; i <= gridSize; i++) {
+                const y = i * cellSize;
+                meshCtx.moveTo(0, y);
+                meshCtx.lineTo(80, y);
+            }
+
+            // Draw diagonals (triangulation)
+            if (meshVisible) {
+                for (let i = 0; i < gridSize; i++) {
+                    for (let j = 0; j < gridSize; j++) {
+                        const x = i * cellSize;
+                        const y = j * cellSize;
+                        meshCtx.moveTo(x, y);
+                        meshCtx.lineTo(x + cellSize, y + cellSize);
+                    }
+                }
+            }
+
+            meshCtx.stroke();
+        }
+
+        // Initialize mesh preview
+        drawMeshPreview();
+
+        // Mesh control interactions
+        let clickStartTime = 0;
+        meshControl.addEventListener('mousedown', (e) => {
+            const rect = meshControl.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+
+            clickStartTime = Date.now();
+            dragStartY = e.clientY;
+            dragStartDensity = meshDensity;
+            meshControl.style.cursor = 'ns-resize';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (clickStartTime > 0) {
+                const deltaY = Math.abs(dragStartY - e.clientY);
+                if (deltaY > 3) { // Threshold for drag detection
+                    isDragging = true;
+                }
+            }
+
+            if (isDragging) {
+                const deltaY = dragStartY - e.clientY;
+                const newDensity = Math.min(Math.max(dragStartDensity + deltaY, 10), 200);
+
+                if (Math.floor(newDensity) !== Math.floor(meshDensity)) {
+                    meshDensity = newDensity;
+
+                    // Update actual geometry if mesh is visible
+                    if (meshVisible) {
+                        // Update grid size and reinitialize
+                        gridSize = meshDensity;
+                        initializeArrays();
+
+                        // Create new geometry
+                        geometry.dispose();
+                        geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+
+                        // Create new mesh with proper rotation
+                        scene.remove(membrane);
+                        membrane = new THREE.Mesh(geometry, material);
+                        membrane.rotation.x = -Math.PI / 2;
+                        scene.add(membrane);
+                    }
+
+                    drawMeshPreview();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            const wasClick = clickStartTime > 0 && !isDragging && (Date.now() - clickStartTime < 300);
+
+            if (wasClick) {
+                // Toggle mesh visibility
+                meshVisible = !meshVisible;
+                material.wireframe = meshVisible;
+
+                // Update geometry density when toggling on
+                if (meshVisible) {
+                    // Update grid size and reinitialize
+                    gridSize = meshDensity;
+                    initializeArrays();
+
+                    // Create new geometry
+                    geometry.dispose();
+                    geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+
+                    // Create new mesh with proper rotation
+                    scene.remove(membrane);
+                    membrane = new THREE.Mesh(geometry, material);
+                    membrane.rotation.x = -Math.PI / 2;
+                    scene.add(membrane);
+                }
+
+                drawMeshPreview();
+            }
+
+            // Reset states
+            isDragging = false;
+            clickStartTime = 0;
+            meshControl.style.cursor = 'pointer';
+        });
+
+        function updateColorGradient() {
+            colorGradient.style.background = `linear-gradient(to right, ${colorNegative.value}, ${colorPositive.value})`;
+        }
+
+        colorNegative.addEventListener('input', (e) => {
+            material.uniforms.colorNegative.value = new THREE.Color(e.target.value);
+            updateColorGradient();
+        });
+
+        colorPositive.addEventListener('input', (e) => {
+            material.uniforms.colorPositive.value = new THREE.Color(e.target.value);
+            updateColorGradient();
+        });
+
+        // 3D Boundary control with lift and absorption
+        const boundaryControl = document.getElementById('boundary-control');
+        const bCtx = boundaryControl.getContext('2d');
+        boundaryControl.width = 80;  // Update to new size
+        boundaryControl.height = 80;
+
+        // Boundary control variables
+        let boundaryStiffness = 1.0; // 0=free, 1=fixed
+        let boundaryAbsorption = 0.0; // 0=reflect, 1=absorb
+        let isDraggingBoundary = false;
+        let dragStartBoundaryY = 0;
+        let dragStartBoundaryStiffness = 0;
+
+        function drawBoundary() {
+            bCtx.clearRect(0, 0, 80, 80);
+
+            // Set colors based on stiffness
+            const cyan = Math.floor(255 * boundaryStiffness);
+            const alpha = 0.3 + boundaryStiffness * 0.7;
+
+            bCtx.strokeStyle = `rgba(0, ${cyan}, 255, ${alpha})`;
+            bCtx.lineWidth = 2 + boundaryStiffness * 3;
+
+            // Draw shape
+            if (boundaryShape === 'circle') {
+                bCtx.beginPath();
+                bCtx.arc(40, 40, 28, 0, Math.PI * 2);
+                bCtx.stroke();
+            } else {
+                bCtx.strokeRect(12, 12, 56, 56);
+            }
+
+            // Absorption glow if any
+            if (boundaryAbsorption > 0) {
+                bCtx.strokeStyle = `rgba(255, 0, 255, ${boundaryAbsorption * 0.5})`;
+                bCtx.lineWidth = boundaryAbsorption * 15;
+                if (boundaryShape === 'circle') {
+                    bCtx.beginPath();
+                    bCtx.arc(40, 40, 28, 0, Math.PI * 2);
+                    bCtx.stroke();
+                } else {
+                    bCtx.strokeRect(12, 12, 56, 56);
+                }
+            }
+        }
+
+        // Drag for stiffness
+        boundaryControl.addEventListener('mousedown', (e) => {
+            isDraggingBoundary = true;
+            dragStartBoundaryY = e.clientY;
+            dragStartBoundaryStiffness = boundaryStiffness;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDraggingBoundary) {
+                const delta = (dragStartBoundaryY - e.clientY) / 100;
+                boundaryStiffness = Math.max(0, Math.min(1, dragStartBoundaryStiffness + delta));
+                drawBoundary();
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDraggingBoundary = false;
+        });
+
+        // Scroll for absorption
+        boundaryControl.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            boundaryAbsorption = Math.max(0, Math.min(1, boundaryAbsorption - e.deltaY * 0.001));
+
+            // Set boundary type based on values
+            if (boundaryAbsorption > 0.5) {
+                boundaryType = 'infinite';
+            } else if (boundaryStiffness > 0.7) {
+                boundaryType = 'fixed';
+            } else {
+                boundaryType = 'free';
+            }
+
+            drawBoundary();
+        });
+
+        // Click toggles shape
+        boundaryControl.addEventListener('click', () => {
+            if (!isDraggingBoundary) {
+                boundaryShape = boundaryShape === 'square' ? 'circle' : 'square';
+                drawBoundary();
+            }
+        });
+
+        drawBoundary();
+
+        // Frequency Visualizer
+        const freqCanvas = document.getElementById('freq-canvas');
+        const freqCtx = freqCanvas.getContext('2d');
+        const centerX = 112;
+        const centerY = 112;
+        const maxRadius = 95;
+        const minRadius = 25;
+
+        function processAudioForFrequencies() {
+            if (!audioEnabled || !jackAudioData.left.length) return;
+
+            // Simulate frequency analysis (in real app, use FFT)
+            // For now, we'll create bands from the raw audio data
+            for (let i = 0; i < NUM_BANDS; i++) {
+                // Sample different parts of the audio buffer for each band
+                const sampleIndex = Math.floor((i / NUM_BANDS) * jackAudioData.left.length);
+                const leftSample = (jackAudioData.left[sampleIndex] || 128) / 128 - 1;
+                const rightSample = (jackAudioData.right[sampleIndex] || 128) / 128 - 1;
+                const sample = (leftSample + rightSample) / 2;
+
+                // Smooth the frequency data
+                frequencyBands[i] = frequencyBands[i] * 0.7 + Math.abs(sample) * 0.3;
+
+                // Keep history for trails
+                frequencyHistory[i].push(frequencyBands[i]);
+                if (frequencyHistory[i].length > HISTORY_LENGTH) {
+                    frequencyHistory[i].shift();
+                }
+            }
+        }
+
+        function drawFrequencyVisualizer() {
+            freqCtx.clearRect(0, 0, 225, 225);
+
+            // Draw from outer (bass) to inner (treble)
+            for (let i = 0; i < NUM_BANDS; i++) {
+                const angle = (i / NUM_BANDS) * Math.PI * 2 - Math.PI / 2;
+                const nextAngle = ((i + 1) / NUM_BANDS) * Math.PI * 2 - Math.PI / 2;
+
+                // Radius based on frequency band (outer = bass, inner = treble)
+                const bandRadius = maxRadius - (i / NUM_BANDS) * (maxRadius - minRadius);
+                const amplitude = frequencyBands[i] || 0;
+                const radiusOffset = amplitude * 20;
+
+                // Color gradient from deep purple (bass) to cyan (treble)
+                const hue = 280 - (i / NUM_BANDS) * 100; // Purple to cyan
+                const saturation = 70 + amplitude * 30;
+                const lightness = 30 + amplitude * 40;
+
+                freqCtx.fillStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${0.6 + amplitude * 0.4})`;
+                freqCtx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness + 20}%, 0.8)`;
+                freqCtx.lineWidth = 1 + amplitude * 2;
+
+                // Draw radial area segment
+                freqCtx.beginPath();
+                freqCtx.moveTo(centerX, centerY);
+
+                // Draw arc with amplitude
+                const innerR = bandRadius - 3;
+                const outerR = bandRadius + radiusOffset;
+
+                // Create path for this frequency band
+                freqCtx.arc(centerX, centerY, outerR, angle, nextAngle);
+                freqCtx.arc(centerX, centerY, innerR, nextAngle, angle, true);
+                freqCtx.closePath();
+                freqCtx.fill();
+                freqCtx.stroke();
+            }
+
+            // Draw center dot
+            freqCtx.fillStyle = '#00e5ff';
+            freqCtx.beginPath();
+            freqCtx.arc(centerX, centerY, 3, 0, Math.PI * 2);
+            freqCtx.fill();
+        }
+
+        // Handle frequency visualizer clicks
+        freqCanvas.addEventListener('click', (event) => {
+            const rect = freqCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            // Calculate which frequency band was clicked
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) + Math.PI / 2;
+
+            if (distance > minRadius && distance < maxRadius) {
+                // Determine frequency band from radius
+                const bandIndex = Math.floor((1 - (distance - minRadius) / (maxRadius - minRadius)) * NUM_BANDS);
+                const frequency = freqScale(bandIndex);
+
+                // Convert canvas position to membrane position
+                const membraneAngle = angle;
+                const membraneRadius = 30; // Distance from center for actuator placement
+                const membraneX = Math.cos(membraneAngle) * membraneRadius;
+                const membraneZ = Math.sin(membraneAngle) * membraneRadius;
+
+                // Create frequency-filtered actuator
+                const actuator = addActuator(membraneX, membraneZ, 'mono');
+                actuator.frequencyBand = bandIndex;
+                actuator.centerFrequency = frequency;
+
+                // Set actuator color based on frequency band
+                const hue = 280 - (bandIndex / NUM_BANDS) * 100; // Same as visualizer
+                const color = new THREE.Color(`hsl(${hue}, 70%, 50%)`);
+                actuator.visual.material.color = color;
+                actuator.visual.material.emissive = color;
+
+                console.log(`Created actuator for ${frequency.toFixed(0)}Hz (band ${bandIndex})`);
+            }
+        });
+
+        // Add hover effect
+        freqCanvas.addEventListener('mousemove', (event) => {
+            const rect = freqCanvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > minRadius && distance < maxRadius) {
+                freqCanvas.style.cursor = 'pointer';
+            } else {
+                freqCanvas.style.cursor = 'default';
+            }
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Process audio input if enabled (now via WebSocket from JACK)
+            if (audioEnabled) {
+                // Process audio for frequency visualization
+                processAudioForFrequencies();
+                drawFrequencyVisualizer();
+
+                // Apply audio to each actuator
+                actuators.forEach(actuator => {
+                    actuator.apply();
+
+                    // Update visual indicator
+                    if (actuator.visual && jackAudioData.left.length) {
+                        // Pulse based on audio level
+                        let sample = 128;
+                        if (actuator.channel === 'left') {
+                            sample = jackAudioData.left[0] || 128;
+                        } else if (actuator.channel === 'right') {
+                            sample = jackAudioData.right[0] || 128;
+                        } else {
+                            sample = ((jackAudioData.left[0] || 128) + (jackAudioData.right[0] || 128)) / 2;
+                        }
+                        const normalized = sample / 128.0 - 1.0;
+                        const scale = 1.0 + Math.abs(normalized) * 0.5;
+                        actuator.visual.scale.set(scale, scale, scale);
+                    }
+                });
+            }
+
+            updatePhysics();
+            material.uniforms.time.value = Date.now() * 0.001;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Initialize and start
+        initializeArrays();
+        animate();
+
+        // Handle resize
+        // Resize handling - make membrane fill window
+        function handleResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', handleResize);
+        handleResize(); // Initial sizing
+
+        // Initialize boundary display
+        updateBoundaryDisplay();
+
+        console.log('🌊 Cosmic Membrane Physics Visualizer');
+        console.log('Harold aesthetic: midnight alaska + intense cyan');
+    </script>
+</body>
+</html>

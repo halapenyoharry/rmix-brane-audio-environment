@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio-Driven Oscillator with Physical Ball</title>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0a1323;
+            color: #00ffff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #visualization {
+            flex: 1;
+            position: relative;
+        }
+        
+        #controls {
+            width: 400px;
+            background: rgba(10, 19, 35, 0.95);
+            border-left: 1px solid rgba(0, 255, 255, 0.3);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .control-section {
+            padding: 15px;
+            background: rgba(0, 255, 255, 0.05);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 5px;
+        }
+        
+        .control-section h3 {
+            margin-bottom: 15px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #00ffff;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+            padding-bottom: 5px;
+        }
+        
+        .control {
+            margin: 10px 0;
+        }
+        
+        label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #1a237e, #00e5ff);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #00ffff;
+            cursor: pointer;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
+        }
+        
+        .value-display {
+            text-align: right;
+            font-size: 12px;
+            color: #18ffff;
+            margin-top: 3px;
+            font-weight: bold;
+        }
+        
+        select, button {
+            width: 100%;
+            padding: 8px;
+            background: #0a1323;
+            color: #00ffff;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            font-family: inherit;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        button:hover {
+            background: rgba(0, 255, 255, 0.1);
+        }
+        
+        button.active {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: #00ffff;
+        }
+        
+        .physics-value {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 11px;
+        }
+        
+        .physics-label {
+            opacity: 0.7;
+        }
+        
+        .physics-number {
+            color: #18ffff;
+            font-weight: bold;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(10, 19, 35, 0.9);
+            padding: 15px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 250px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(10, 19, 35, 0.9);
+            padding: 10px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 5px;
+            font-size: 11px;
+            max-width: 300px;
+        }
+        
+        .key {
+            display: inline-block;
+            background: rgba(0, 255, 255, 0.2);
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 5px;
+        }
+        
+        /* EQ visualization */
+        .eq-display {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            height: 60px;
+            align-items: flex-end;
+        }
+        
+        .eq-bar {
+            flex: 1;
+            margin: 0 1px;
+            background: rgba(0, 255, 255, 0.3);
+            transition: height 0.1s;
+            position: relative;
+        }
+        
+        .eq-bar.active {
+            background: #00ffff;
+            box-shadow: 0 0 10px #00ffff;
+        }
+        
+        .eq-label {
+            position: absolute;
+            bottom: -15px;
+            font-size: 8px;
+            width: 100%;
+            text-align: center;
+            opacity: 0.5;
+        }
+        
+        .divider {
+            height: 1px;
+            background: rgba(0, 255, 255, 0.2);
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="visualization">
+            <div id="oscillator-viz"></div>
+            
+            <div id="info">
+                <h4 style="margin-bottom: 10px; color: #00ffff;">PHYSICS STATE</h4>
+                <div class="physics-value">
+                    <span class="physics-label">Position:</span>
+                    <span class="physics-number" id="position-display">0.000 m</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Velocity:</span>
+                    <span class="physics-number" id="velocity-display">0.000 m/s</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Mass:</span>
+                    <span class="physics-number" id="mass-display">0.100 kg</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Spring k:</span>
+                    <span class="physics-number" id="spring-k-display">100 N/m</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Damping b:</span>
+                    <span class="physics-number" id="damping-display">0.05 N·s/m</span>
+                </div>
+                <div class="divider"></div>
+                <div class="physics-value">
+                    <span class="physics-label">Natural ω₀:</span>
+                    <span class="physics-number" id="natural-freq-display">33.9 Hz</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Q Factor:</span>
+                    <span class="physics-number" id="q-display">4.47</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Energy:</span>
+                    <span class="physics-number" id="energy-display">0.000 J</span>
+                </div>
+            </div>
+            
+            <div id="instructions">
+                <h4 style="margin-bottom: 5px;">CONTROLS</h4>
+                <div style="margin: 3px 0;">
+                    <span class="key">Scroll</span> Change ball radius → mass ∝ r³
+                </div>
+                <div style="margin: 3px 0;">
+                    <span class="key">Mouse X</span> Stereo balance
+                </div>
+                <div style="margin: 3px 0;">
+                    <span class="key">Mouse Y</span> Coupling distance
+                </div>
+                <div style="margin: 3px 0;">
+                    <span class="key">Space</span> Pause/Resume
+                </div>
+            </div>
+        </div>
+        
+        <div id="controls">
+            <!-- Original Falstad Controls -->
+            <div class="control-section">
+                <h3>FALSTAD OSCILLATOR CONTROLS</h3>
+                
+                <div class="control">
+                    <label>Tension (Spring Constant)</label>
+                    <input type="range" id="tension-slider" min="0.1" max="10" value="1" step="0.01">
+                    <div class="value-display" id="tension-display">1.00</div>
+                </div>
+                
+                <div class="control">
+                    <label>Mass</label>
+                    <input type="range" id="mass-slider" min="0.01" max="2" value="0.1" step="0.01">
+                    <div class="value-display" id="mass-value">0.10 kg</div>
+                </div>
+                
+                <div class="control">
+                    <label>Damping</label>
+                    <input type="range" id="damping-slider" min="0" max="1" value="0.1" step="0.01">
+                    <div class="value-display" id="damping-value">0.10</div>
+                </div>
+                
+                <div class="control">
+                    <label>Force Type</label>
+                    <select id="force-type-select">
+                        <option value="none">None</option>
+                        <option value="sine" selected>Sine Wave</option>
+                        <option value="square">Square Wave</option>
+                        <option value="sawtooth">Sawtooth</option>
+                        <option value="audio">Audio Input</option>
+                    </select>
+                </div>
+                
+                <div class="control" id="manual-force-controls">
+                    <label>Force Amplitude (N)</label>
+                    <input type="range" id="force-amp-slider" min="0" max="20" value="5" step="0.5">
+                    <div class="value-display" id="force-amp-display">5.0 N</div>
+                    
+                    <label>Force Frequency (Hz)</label>
+                    <input type="range" id="force-freq-slider" min="0.1" max="100" value="10" step="0.1">
+                    <div class="value-display" id="force-freq-display">10.0 Hz</div>
+                </div>
+            </div>
+            
+            <!-- Physical Ball Controls -->
+            <div class="control-section">
+                <h3>PHYSICAL BALL PROPERTIES</h3>
+                
+                <div class="control">
+                    <label>Ball Radius (scroll to change)</label>
+                    <div class="value-display" id="radius-display">20.0 mm</div>
+                </div>
+                
+                <div class="control">
+                    <label>Density (kg/m³)</label>
+                    <select id="density-select">
+                        <option value="1.225">Air (1.225)</option>
+                        <option value="30">Foam (30)</option>
+                        <option value="240">Cork (240)</option>
+                        <option value="1000">Water (1000)</option>
+                        <option value="1100" selected>Rubber (1100)</option>
+                        <option value="2700">Aluminum (2700)</option>
+                        <option value="7850">Steel (7850)</option>
+                        <option value="11340">Lead (11340)</option>
+                    </select>
+                </div>
+                
+                <div class="physics-value">
+                    <span class="physics-label">Calculated Mass:</span>
+                    <span class="physics-number" id="calc-mass">0.037 kg</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Surface/Volume:</span>
+                    <span class="physics-number" id="sv-ratio">150 /m</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Drag coefficient:</span>
+                    <span class="physics-number" id="drag-coef">0.47</span>
+                </div>
+            </div>
+            
+            <!-- EQ/Frequency Control -->
+            <div class="control-section">
+                <h3>FREQUENCY → MASS MAPPING</h3>
+                
+                <div class="eq-display" id="eq-display">
+                    <div class="eq-bar" data-freq="31.5" style="height: 50%">
+                        <span class="eq-label">31Hz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="63" style="height: 50%">
+                        <span class="eq-label">63Hz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="125" style="height: 50%">
+                        <span class="eq-label">125Hz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="250" style="height: 50%">
+                        <span class="eq-label">250Hz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="500" style="height: 50%">
+                        <span class="eq-label">500Hz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="1000" style="height: 50%">
+                        <span class="eq-label">1kHz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="2000" style="height: 50%">
+                        <span class="eq-label">2kHz</span>
+                    </div>
+                    <div class="eq-bar" data-freq="4000" style="height: 50%">
+                        <span class="eq-label">4kHz</span>
+                    </div>
+                </div>
+                
+                <div class="control">
+                    <label>Active Band → Controls Mass</label>
+                    <select id="freq-band-select">
+                        <option value="31.5">31.5 Hz (Heavy)</option>
+                        <option value="63">63 Hz</option>
+                        <option value="125">125 Hz</option>
+                        <option value="250">250 Hz</option>
+                        <option value="500" selected>500 Hz (Medium)</option>
+                        <option value="1000">1 kHz</option>
+                        <option value="2000">2 kHz</option>
+                        <option value="4000">4 kHz (Light)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Audio/Speaker Driver -->
+            <div class="control-section">
+                <h3>SPEAKER DRIVER PHYSICS</h3>
+                
+                <div class="control">
+                    <label>Driver Type</label>
+                    <select id="driver-select">
+                        <option value="subwoofer">Subwoofer (fs=25Hz)</option>
+                        <option value="woofer">Woofer (fs=45Hz)</option>
+                        <option value="fullrange" selected>Full Range (fs=100Hz)</option>
+                        <option value="midrange">Midrange (fs=250Hz)</option>
+                        <option value="tweeter">Tweeter (fs=2500Hz)</option>
+                    </select>
+                </div>
+                
+                <div class="physics-value">
+                    <span class="physics-label">Bl Factor:</span>
+                    <span class="physics-number" id="bl-factor">6.0 T·m</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Impedance:</span>
+                    <span class="physics-number" id="impedance">8.0 Ω</span>
+                </div>
+                <div class="physics-value">
+                    <span class="physics-label">Temperature:</span>
+                    <span class="physics-number" id="temp-display">25.0 °C</span>
+                </div>
+            </div>
+            
+            <!-- Audio Input -->
+            <div class="control-section">
+                <h3>AUDIO INPUT</h3>
+                
+                <div class="control">
+                    <button id="start-audio">START MICROPHONE</button>
+                </div>
+                
+                <div class="control">
+                    <label>Audio Level</label>
+                    <div style="height: 8px; background: rgba(0, 255, 255, 0.1); border: 1px solid rgba(0, 255, 255, 0.3); border-radius: 4px;">
+                        <div id="audio-level" style="height: 100%; width: 0%; background: linear-gradient(90deg, #00ffff, #00ff00, #ffff00, #ff0000); transition: width 0.1s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Load D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <!-- Load physics and coupling -->
+    <script src="harmonic-oscillator.js"></script>
+    <script src="falstad-oscillator.js"></script>
+    <script src="physical-ball.js"></script>
+    <script src="audio-oscillator-coupler.js"></script>
+    <script src="audio-interfaces.js"></script>
+    
+    <script>
+        // Initialize oscillator with visualization
+        const oscillator = new FalstadOscillator('oscillator-viz', {
+            width: window.innerWidth - 400,
+            height: window.innerHeight,
+            physics: {
+                mass: 0.1,
+                springConstant: 100,
+                dampingCoefficient: 0.1,
+                forceType: 'sine',
+                forceAmplitude: 5,
+                forceFrequency: 10
+            }
+        });
+        
+        // Create audio coupler
+        const coupler = new AudioOscillatorCoupler(oscillator.physics, 'fullrange');
+        
+        // Create audio interface manager
+        const audioManager = new AudioInterfaceManager(coupler);
+        
+        // Get control API
+        const api = oscillator.getControlAPI();
+        
+        // Manual controls (Falstad style)
+        document.getElementById('tension-slider').addEventListener('input', (e) => {
+            const tension = parseFloat(e.target.value);
+            const k = tension * 100;  // Scale to N/m
+            api.setSpringConstant(k);
+            document.getElementById('tension-display').textContent = tension.toFixed(2);
+            updatePhysicsDisplay();
+        });
+        
+        document.getElementById('mass-slider').addEventListener('input', (e) => {
+            const mass = parseFloat(e.target.value);
+            api.setMass(mass);
+            document.getElementById('mass-value').textContent = mass.toFixed(2) + ' kg';
+            updatePhysicsDisplay();
+        });
+        
+        document.getElementById('damping-slider').addEventListener('input', (e) => {
+            const damping = parseFloat(e.target.value);
+            const b = damping * 2;  // Scale to N·s/m
+            api.setDamping(b);
+            document.getElementById('damping-value').textContent = damping.toFixed(2);
+            updatePhysicsDisplay();
+        });
+        
+        document.getElementById('force-type-select').addEventListener('change', (e) => {
+            const forceType = e.target.value;
+            if (forceType === 'audio') {
+                document.getElementById('manual-force-controls').style.display = 'none';
+                // Audio will drive it
+            } else {
+                document.getElementById('manual-force-controls').style.display = 'block';
+                api.setForceType(forceType);
+            }
+        });
+        
+        document.getElementById('force-amp-slider').addEventListener('input', (e) => {
+            const amp = parseFloat(e.target.value);
+            api.setForceAmplitude(amp);
+            document.getElementById('force-amp-display').textContent = amp.toFixed(1) + ' N';
+        });
+        
+        document.getElementById('force-freq-slider').addEventListener('input', (e) => {
+            const freq = parseFloat(e.target.value);
+            api.setForceFrequency(freq);
+            document.getElementById('force-freq-display').textContent = freq.toFixed(1) + ' Hz';
+        });
+        
+        // Physical ball controls
+        document.getElementById('density-select').addEventListener('change', (e) => {
+            const density = parseFloat(e.target.value);
+            coupler.physicalBall.materialDensity = density;
+            coupler.physicalBall.updatePhysicsFromRadius();
+            updatePhysicsDisplay();
+        });
+        
+        // Frequency band selection (affects mass)
+        document.getElementById('freq-band-select').addEventListener('change', (e) => {
+            const freq = parseFloat(e.target.value);
+            // Map frequency to mass: low freq = high mass, high freq = low mass
+            const massFromFreq = 1 / (freq * 0.001);  // Inverse relationship
+            coupler.physicalBall.setRadius(Math.cbrt(massFromFreq / (coupler.physicalBall.materialDensity * 4/3 * Math.PI)));
+            updatePhysicsDisplay();
+            updateEQDisplay(freq);
+        });
+        
+        // Driver selection
+        document.getElementById('driver-select').addEventListener('change', (e) => {
+            coupler.loadDriverPreset(e.target.value);
+            document.getElementById('bl-factor').textContent = coupler.driver.Bl.toFixed(1) + ' T·m';
+            document.getElementById('impedance').textContent = coupler.driver.Re.toFixed(1) + ' Ω';
+        });
+        
+        // Mouse interaction
+        document.getElementById('visualization').addEventListener('mousemove', (e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / rect.width * 2 - 1;
+            const mouseY = (e.clientY - rect.top) / rect.height;
+            coupler.handleMouseMove(mouseX, mouseY);
+        });
+        
+        // Scroll wheel for ball size
+        document.getElementById('visualization').addEventListener('wheel', (e) => {
+            e.preventDefault();
+            coupler.handleScrollWheel(e.deltaY);
+            updatePhysicsDisplay();
+        });
+        
+        // Audio input
+        document.getElementById('start-audio').addEventListener('click', async () => {
+            const button = document.getElementById('start-audio');
+            
+            if (button.classList.contains('active')) {
+                audioManager.stop();
+                button.classList.remove('active');
+                button.textContent = 'START MICROPHONE';
+                document.getElementById('force-type-select').value = 'sine';
+            } else {
+                try {
+                    await audioManager.selectSource('microphone');
+                    button.classList.add('active');
+                    button.textContent = 'STOP MICROPHONE';
+                    document.getElementById('force-type-select').value = 'audio';
+                } catch (error) {
+                    console.error('Failed to start audio:', error);
+                }
+            }
+        });
+        
+        // Space bar to pause
+        document.addEventListener('keydown', (e) => {
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (oscillator.isPaused) {
+                    oscillator.play();
+                } else {
+                    oscillator.pause();
+                }
+            }
+        });
+        
+        // Update physics display
+        function updatePhysicsDisplay() {
+            const state = api.getState();
+            const ball = coupler.physicalBall;
+            
+            // Position and motion
+            document.getElementById('position-display').textContent = state.position.toFixed(3) + ' m';
+            document.getElementById('velocity-display').textContent = state.velocity.toFixed(3) + ' m/s';
+            
+            // Physical parameters
+            document.getElementById('mass-display').textContent = state.mass.toFixed(3) + ' kg';
+            document.getElementById('spring-k-display').textContent = state.springConstant.toFixed(1) + ' N/m';
+            document.getElementById('damping-display').textContent = state.dampingCoefficient.toFixed(2) + ' N·s/m';
+            
+            // Derived values
+            document.getElementById('natural-freq-display').textContent = state.naturalFrequency.toFixed(1) + ' Hz';
+            document.getElementById('q-display').textContent = state.qFactor.toFixed(2);
+            document.getElementById('energy-display').textContent = state.totalEnergy.toFixed(3) + ' J';
+            
+            // Ball properties
+            document.getElementById('radius-display').textContent = (ball.radius * 1000).toFixed(1) + ' mm';
+            document.getElementById('calc-mass').textContent = ball.mass.toFixed(3) + ' kg';
+            document.getElementById('sv-ratio').textContent = (ball.surfaceToVolumeRatio).toFixed(0) + ' /m';
+            
+            // Update visual ball size
+            oscillator.vizConfig.massRadius = Math.min(50, Math.max(5, ball.radius * 1000));
+            
+            // Temperature
+            document.getElementById('temp-display').textContent = coupler.metrics.temperature.toFixed(1) + ' °C';
+        }
+        
+        // Update EQ display
+        function updateEQDisplay(activeFreq) {
+            const bars = document.querySelectorAll('.eq-bar');
+            bars.forEach(bar => {
+                const freq = parseFloat(bar.dataset.freq);
+                if (Math.abs(freq - activeFreq) < 10) {
+                    bar.classList.add('active');
+                } else {
+                    bar.classList.remove('active');
+                }
+            });
+        }
+        
+        // Animation loop
+        function animate() {
+            // Update physics display
+            updatePhysicsDisplay();
+            
+            // Update audio level
+            const audioLevel = Math.abs(coupler.currentSample || 0) * 100;
+            document.getElementById('audio-level').style.width = audioLevel + '%';
+            
+            requestAnimationFrame(animate);
+        }
+        
+        // Start animation
+        animate();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            oscillator.width = window.innerWidth - 400;
+            oscillator.height = window.innerHeight;
+            oscillator.initVisualization();
+        });
+    </script>
+</body>
+</html>

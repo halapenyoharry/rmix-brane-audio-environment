@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Audio-Reactive Membrane - Fixed</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e27; /* midnight alaska */
+            color: #00e5ff; /* intense cyan */
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Audio Status */
+        #audio-status {
+            position: fixed;
+            top: 30px;
+            left: 30px;
+            background: rgba(10, 14, 39, 0.85);
+            backdrop-filter: blur(20px);
+            padding: 15px;
+            border-radius: 12px;
+            border: 2px solid rgba(0, 229, 255, 0.2);
+            box-shadow: 0 0 40px rgba(0, 229, 255, 0.1);
+            z-index: 100;
+            color: #00e5ff;
+            font-size: 12px;
+        }
+
+        /* Instructions */
+        #instructions {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(10, 14, 39, 0.85);
+            backdrop-filter: blur(20px);
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            font-size: 12px;
+            max-width: 300px;
+            z-index: 100;
+            line-height: 1.8;
+        }
+
+        #instructions h3 {
+            color: #18ffff;
+            margin-bottom: 10px;
+            font-weight: 300;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #instructions kbd {
+            background: rgba(26, 35, 126, 0.4);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            margin: 0 2px;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #00e5ff;
+            font-size: 18px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Three.js...</div>
+    <div id="canvas-container"></div>
+
+    <div id="audio-status">
+        <div style="margin-bottom: 8px;">
+            <span style="font-weight: bold;">AUDIO:</span>
+            <span id="audio-indicator" style="color: #ff0000;">OFF</span>
+        </div>
+        <div style="margin-bottom: 8px;">
+            <span>MODE:</span>
+            <span id="mode-display">DEMO</span>
+        </div>
+        <div>
+            <span>ACTUATORS:</span>
+            <span id="actuator-count">0</span>
+        </div>
+    </div>
+
+    <div id="instructions">
+        <h3>Controls</h3>
+        <div>
+            <kbd>Click</kbd> Add actuator<br>
+            <kbd>Drag</kbd> Rotate view<br>
+            <kbd>Scroll</kbd> Zoom<br>
+            <kbd>A</kbd> Connect to JACK (via extension)<br>
+            <kbd>D</kbd> Demo waves<br>
+            <kbd>R</kbd> Reset<br>
+            <kbd>C</kbd> Clear actuators
+        </div>
+        <div style="margin-top: 15px; font-size: 10px; opacity: 0.7;">
+            <div style="display: inline-block; width: 12px; height: 12px; background: #ff00ff; margin-right: 5px;"></div>LEFT
+            <div style="display: inline-block; width: 12px; height: 12px; background: #00ffff; margin: 0 5px;"></div>RIGHT
+            <div style="display: inline-block; width: 12px; height: 12px; background: #ffff00; margin: 0 5px;"></div>MONO
+        </div>
+    </div>
+
+    <!-- Load Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Hide loading once Three.js loads
+        document.getElementById('loading').style.display = 'none';
+
+        // Scene setup with Harold's midnight alaska aesthetic
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0e27);
+
+        const camera = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.01,
+            5000
+        );
+        camera.position.set(50, 40, 50);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            canvas: document.createElement('canvas')
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Lighting optimized for Harold's colors
+        const ambientLight = new THREE.AmbientLight(0x1a237e, 0.4);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0x00e5ff, 0.6);
+        directionalLight.position.set(100, 100, 50);
+        scene.add(directionalLight);
+
+        // 3D Membrane
+        let gridSize = 100;
+        const membraneSize = 100;
+        let geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+
+        // Custom shader material for Harold's aesthetic
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                waveHeight: { value: 20.0 },
+                colorNegative: { value: new THREE.Color(0x00ffff) },
+                colorPositive: { value: new THREE.Color(0xff00ff) },
+                opacity: { value: 1.0 }
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying float vHeight;
+
+                void main() {
+                    vPosition = position;
+                    vHeight = position.z;
+                    vNormal = normal;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 colorNegative;
+                uniform vec3 colorPositive;
+                uniform float opacity;
+                uniform float time;
+
+                varying vec3 vNormal;
+                varying vec3 vPosition;
+                varying float vHeight;
+
+                void main() {
+                    float t = (vHeight + 10.0) / 20.0;
+                    t = clamp(t, 0.0, 1.0);
+
+                    vec3 color = mix(colorNegative, colorPositive, t);
+
+                    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+                    float diff = max(dot(vNormal, lightDir), 0.0);
+                    color *= (0.7 + diff * 0.3);
+
+                    gl_FragColor = vec4(color, opacity);
+                }
+            `,
+            transparent: false,
+            side: THREE.DoubleSide,
+            wireframe: false,
+            depthWrite: true,
+            depthTest: true
+        });
+
+        let membrane = new THREE.Mesh(geometry, material);
+        membrane.rotation.x = -Math.PI / 2;
+        scene.add(membrane);
+
+        // Physics arrays
+        let heights = [];
+        let velocities = [];
+        let waveSpeed = 0.3;
+        let damping = 0.00265;
+
+        function initializeArrays() {
+            heights = new Array(gridSize + 1);
+            velocities = new Array(gridSize + 1);
+            for (let i = 0; i <= gridSize; i++) {
+                heights[i] = new Array(gridSize + 1).fill(0);
+                velocities[i] = new Array(gridSize + 1).fill(0);
+            }
+        }
+
+        // Actuator system
+        let actuators = [];
+        let audioEnabled = false;
+        let demoMode = false;
+        let audioContext = null;
+        let audioAnalyser = null;
+        let audioDataArray = null;
+        let audioStream = null;
+
+        // Actuator class
+        class Actuator {
+            constructor(x, y, channel = 'mono') {
+                this.x = x;
+                this.y = y;
+                this.gridX = Math.round(((y + membraneSize/2) / membraneSize) * gridSize);
+                this.gridY = Math.round(((x + membraneSize/2) / membraneSize) * gridSize);
+                this.channel = channel;
+                this.gain = 1.0;
+                this.visual = null;
+                this.demoPhase = Math.random() * Math.PI * 2;
+            }
+
+            apply() {
+                let force = 0;
+                
+                if (demoMode) {
+                    // Demo sine waves
+                    const time = Date.now() * 0.001;
+                    force = Math.sin(time * 2 + this.demoPhase) * 2;
+                } else if (audioEnabled && audioDataArray) {
+                    // Use real JACK audio data
+                    if (this.channel === 'left') {
+                        // Use lower frequencies for left channel
+                        let sum = 0;
+                        for (let i = 0; i < audioDataArray.length / 4; i++) {
+                            sum += audioDataArray[i];
+                        }
+                        force = (sum / (audioDataArray.length / 4) / 128 - 1) * 3;
+                    } else if (this.channel === 'right') {
+                        // Use higher frequencies for right channel
+                        let sum = 0;
+                        for (let i = audioDataArray.length * 3/4; i < audioDataArray.length; i++) {
+                            sum += audioDataArray[i];
+                        }
+                        force = (sum / (audioDataArray.length / 4) / 128 - 1) * 3;
+                    } else {
+                        // Mono - use full spectrum
+                        let sum = 0;
+                        for (let i = 0; i < audioDataArray.length; i++) {
+                            sum += audioDataArray[i];
+                        }
+                        force = (sum / audioDataArray.length / 128 - 1) * 3;
+                    }
+                }
+
+                // Apply force to membrane as an actuator
+                if (this.gridX >= 0 && this.gridX <= gridSize &&
+                    this.gridY >= 0 && this.gridY <= gridSize) {
+                    // Apply audio force to membrane
+                    velocities[this.gridX][this.gridY] += force * 0.1;
+                    
+                    // Keep ball at fixed height above membrane rest position
+                    if (this.visual) {
+                        this.visual.position.y = 2; // Fixed height
+                    }
+                }
+            }
+        }
+
+        // Add actuator
+        function addActuator(x, y, channel = 'mono') {
+            const actuator = new Actuator(x, y, channel);
+            actuators.push(actuator);
+
+            const color = channel === 'left' ? 0xff00ff : (channel === 'right' ? 0x00ffff : 0xffff00);
+            const indicator = new THREE.Mesh(
+                new THREE.SphereGeometry(2, 16, 16),
+                new THREE.MeshBasicMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 0.5,
+                    transparent: true,
+                    opacity: 0.7
+                })
+            );
+            indicator.position.set(x, 2, y);
+            scene.add(indicator);
+            actuator.visual = indicator;
+
+            document.getElementById('actuator-count').textContent = actuators.length;
+            return actuator;
+        }
+
+        // Initialize JACK audio through extension
+        async function initJackAudio() {
+            try {
+                console.log('Requesting JACK audio access...');
+                
+                // Check if JACK bridge is available
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const jackDevice = devices.find(d => d.deviceId === 'jack-system-capture');
+                
+                if (!jackDevice) {
+                    throw new Error('JACK Bridge extension not installed or running');
+                }
+                
+                // Request JACK audio stream
+                audioStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { deviceId: 'jack-system-capture' }
+                });
+                
+                // Create audio context and analyser
+                audioContext = new AudioContext();
+                audioAnalyser = audioContext.createAnalyser();
+                audioAnalyser.fftSize = 256;
+                audioAnalyser.smoothingTimeConstant = 0.8;
+                
+                audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                
+                // Connect stream to analyser
+                const source = audioContext.createMediaStreamSource(audioStream);
+                source.connect(audioAnalyser);
+                
+                console.log('JACK audio connected successfully!');
+                return true;
+                
+            } catch (error) {
+                console.error('Failed to connect to JACK:', error);
+                alert('Failed to connect to JACK audio: ' + error.message + '\n\nMake sure:\n1. Zen JACK Bridge extension is loaded\n2. JACK server is running\n3. zen-jack-bridge client appears in patchbay');
+                return false;
+            }
+        }
+
+        // Update audio data
+        function updateAudioData() {
+            if (audioEnabled && audioAnalyser && audioDataArray) {
+                audioAnalyser.getByteFrequencyData(audioDataArray);
+                
+                // Debug: Check if we're getting any audio data
+                let maxLevel = 0;
+                for (let i = 0; i < audioDataArray.length; i++) {
+                    if (audioDataArray[i] > maxLevel) {
+                        maxLevel = audioDataArray[i];
+                    }
+                }
+                
+                // Log every second if there's audio
+                if (Date.now() % 1000 < 16) {
+                    console.log('Audio max level:', maxLevel, 'First 10 values:', Array.from(audioDataArray.slice(0, 10)));
+                }
+            }
+        }
+
+        // Physics update
+        function updatePhysics() {
+            const newHeights = new Array(gridSize + 1).fill(0).map(() => new Array(gridSize + 1).fill(0));
+
+            // Wave equation
+            for (let i = 1; i < gridSize; i++) {
+                for (let j = 1; j < gridSize; j++) {
+                    const laplacian = (
+                        heights[i + 1][j] + heights[i - 1][j] +
+                        heights[i][j + 1] + heights[i][j - 1] -
+                        4 * heights[i][j]
+                    );
+
+                    velocities[i][j] += waveSpeed * waveSpeed * laplacian;
+                    velocities[i][j] *= (1 - damping);
+                    newHeights[i][j] = heights[i][j] + velocities[i][j];
+                }
+            }
+
+            // Fixed boundaries
+            for (let i = 0; i <= gridSize; i++) {
+                newHeights[0][i] = 0;
+                newHeights[gridSize][i] = 0;
+                newHeights[i][0] = 0;
+                newHeights[i][gridSize] = 0;
+            }
+
+            heights = newHeights;
+
+            // Update geometry
+            const positions = membrane.geometry.attributes.position.array;
+            for (let i = 0; i <= gridSize; i++) {
+                for (let j = 0; j <= gridSize; j++) {
+                    const index = (i * (gridSize + 1) + j) * 3 + 2;
+                    positions[index] = heights[i][j] * material.uniforms.waveHeight.value;
+                }
+            }
+
+            membrane.geometry.attributes.position.needsUpdate = true;
+            membrane.geometry.computeVertexNormals();
+        }
+
+        // Mouse interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        renderer.domElement.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(membrane);
+            
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                let channel = 'mono';
+                if (point.x < -20) channel = 'left';
+                else if (point.x > 20) channel = 'right';
+                
+                addActuator(point.x, point.z, channel);
+            }
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', async (e) => {
+            if (e.key === 'a' || e.key === 'A') {
+                // Toggle JACK audio
+                if (!audioEnabled) {
+                    const success = await initJackAudio();
+                    if (success) {
+                        audioEnabled = true;
+                        demoMode = false;
+                        document.getElementById('audio-indicator').textContent = 'JACK';
+                        document.getElementById('audio-indicator').style.color = '#00ff00';
+                        document.getElementById('mode-display').textContent = 'JACK';
+                    }
+                } else {
+                    audioEnabled = false;
+                    if (audioStream) {
+                        audioStream.getTracks().forEach(track => track.stop());
+                    }
+                    if (audioContext) {
+                        audioContext.close();
+                    }
+                    document.getElementById('audio-indicator').textContent = 'OFF';
+                    document.getElementById('audio-indicator').style.color = '#ff0000';
+                    document.getElementById('mode-display').textContent = 'OFF';
+                }
+            } else if (e.key === 'd' || e.key === 'D') {
+                // Toggle demo mode
+                demoMode = !demoMode;
+                document.getElementById('mode-display').textContent = demoMode ? 'DEMO' : 'OFF';
+                
+                if (demoMode) {
+                    audioEnabled = false;
+                    document.getElementById('audio-indicator').textContent = 'OFF';
+                    document.getElementById('audio-indicator').style.color = '#ff0000';
+                }
+            } else if (e.key === 'r' || e.key === 'R') {
+                initializeArrays();
+            } else if (e.key === 'c' || e.key === 'C') {
+                actuators.forEach(act => {
+                    if (act.visual) scene.remove(act.visual);
+                });
+                actuators = [];
+                document.getElementById('actuator-count').textContent = '0';
+            }
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update audio data from JACK
+            updateAudioData();
+
+            // Apply actuators
+            actuators.forEach(actuator => {
+                actuator.apply();
+            });
+
+            updatePhysics();
+            material.uniforms.time.value = Date.now() * 0.001;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle resize
+        function handleResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', handleResize);
+
+        // Initialize and start
+        initializeArrays();
+        
+        // Add a demo actuator
+        addActuator(0, 0, 'mono');
+        
+        animate();
+
+        console.log('🌊 JACK-Enabled Membrane Visualization');
+        console.log('Press A for JACK audio, D for demo, Click to add actuators');
+        console.log('Requires Zen JACK Bridge extension');
+    </script>
+</body>
+</html>
