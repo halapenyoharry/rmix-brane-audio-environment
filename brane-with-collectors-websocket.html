@@ -125,7 +125,7 @@
             <kbd>F</kbd> Load audio file<br>
             <kbd>A</kbd> Connect to JACK input<br>
             <kbd>D</kbd> Demo waves<br>
-            <kbd>O</kbd> Connect WebSocket output<br>
+            <kbd>O</kbd> Toggle audio output<br>
             <kbd>R</kbd> Reset membrane<br>
             <kbd>C</kbd> Clear all actuators<br>
             <kbd>M</kbd> Clear all collectors
@@ -272,6 +272,11 @@
         // Audio file playback
         let audioElement = null;
         let audioFileMode = false;
+
+        // Audio output for collectors
+        let outputContext = null;
+        let outputProcessor = null;
+        let audioOutputEnabled = false;
 
         // Actuator class
         class Actuator {
@@ -604,7 +609,75 @@
             document.getElementById('output-indicator').style.color = '#ff0000';
         }
 
-        // Send collector samples to WebSocket
+        // Initialize audio output for collectors
+        function initAudioOutput() {
+            if (audioOutputEnabled) {
+                console.log('Audio output already enabled');
+                return;
+            }
+
+            if (!outputContext) {
+                outputContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            // Create ScriptProcessorNode (4096 buffer size for smooth playback)
+            outputProcessor = outputContext.createScriptProcessor(4096, 0, 2);
+
+            outputProcessor.onaudioprocess = (e) => {
+                const outputL = e.outputBuffer.getChannelData(0);
+                const outputR = e.outputBuffer.getChannelData(1);
+
+                // Fill buffer with collector samples
+                for (let i = 0; i < outputL.length; i++) {
+                    let left = 0;
+                    let right = 0;
+
+                    // Sample all collectors and mix
+                    collectors.forEach(collector => {
+                        const sample = collector.sample();
+
+                        if (collector.channel === 'left') {
+                            left += sample;
+                        } else if (collector.channel === 'right') {
+                            right += sample;
+                        } else {
+                            // Mono - send to both
+                            left += sample;
+                            right += sample;
+                        }
+                    });
+
+                    outputL[i] = left;
+                    outputR[i] = right;
+                }
+            };
+
+            // Connect to speakers (which Firefox routes to JACK)
+            outputProcessor.connect(outputContext.destination);
+
+            audioOutputEnabled = true;
+            document.getElementById('output-indicator').textContent = 'AUDIO';
+            document.getElementById('output-indicator').style.color = '#00ff00';
+
+            console.log('Audio output enabled - routing to Firefox JACK output');
+        }
+
+        function stopAudioOutput() {
+            if (outputProcessor) {
+                outputProcessor.disconnect();
+                outputProcessor = null;
+            }
+            if (outputContext) {
+                outputContext.close();
+                outputContext = null;
+            }
+            audioOutputEnabled = false;
+            document.getElementById('output-indicator').textContent = 'OFF';
+            document.getElementById('output-indicator').style.color = '#ff0000';
+            console.log('Audio output stopped');
+        }
+
+        // Send collector samples to WebSocket (legacy, can remove if not using)
         function sendCollectorSamples() {
             if (!outputEnabled || !websocket || websocket.readyState !== WebSocket.OPEN) {
                 return;
@@ -768,11 +841,11 @@
                     }
                 }
             } else if (e.key === 'o' || e.key === 'O') {
-                // Toggle WebSocket output
-                if (!outputEnabled) {
-                    connectWebSocket();
+                // Toggle audio output
+                if (!audioOutputEnabled) {
+                    initAudioOutput();
                 } else {
-                    disconnectWebSocket();
+                    stopAudioOutput();
                 }
             } else if (e.key === 'r' || e.key === 'R') {
                 initializeArrays();
@@ -805,8 +878,7 @@
 
             updatePhysics();
 
-            // Sample collectors and send to output
-            sendCollectorSamples();
+            // Collectors sample automatically in audio processor callback
 
             material.uniforms.time.value = Date.now() * 0.001;
 
