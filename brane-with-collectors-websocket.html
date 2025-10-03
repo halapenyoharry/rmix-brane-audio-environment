@@ -356,7 +356,7 @@
 
                 // Universal settings
                 this.mode = config.mode || 'velocity';  // 'displacement', 'velocity', 'acceleration'
-                this.gain = config.gain || 5.0;
+                this.gain = config.gain || 50.0;  // Increased from 5.0
                 this.name = config.name || 'collector';
                 this.channel = config.channel || 'mono'; // 'left', 'right', 'mono'
                 this.visual = null;
@@ -623,33 +623,40 @@
             // Create ScriptProcessorNode (4096 buffer size for smooth playback)
             outputProcessor = outputContext.createScriptProcessor(4096, 0, 2);
 
+            let lastLeft = 0;
+            let lastRight = 0;
+
             outputProcessor.onaudioprocess = (e) => {
                 const outputL = e.outputBuffer.getChannelData(0);
                 const outputR = e.outputBuffer.getChannelData(1);
 
-                // Fill buffer with collector samples
+                // Sample collectors once per buffer (not per sample)
+                let targetLeft = 0;
+                let targetRight = 0;
+
+                collectors.forEach(collector => {
+                    const sample = collector.sample();
+
+                    if (collector.channel === 'left') {
+                        targetLeft += sample;
+                    } else if (collector.channel === 'right') {
+                        targetRight += sample;
+                    } else {
+                        // Mono - send to both
+                        targetLeft += sample;
+                        targetRight += sample;
+                    }
+                });
+
+                // Interpolate from last to target
                 for (let i = 0; i < outputL.length; i++) {
-                    let left = 0;
-                    let right = 0;
-
-                    // Sample all collectors and mix
-                    collectors.forEach(collector => {
-                        const sample = collector.sample();
-
-                        if (collector.channel === 'left') {
-                            left += sample;
-                        } else if (collector.channel === 'right') {
-                            right += sample;
-                        } else {
-                            // Mono - send to both
-                            left += sample;
-                            right += sample;
-                        }
-                    });
-
-                    outputL[i] = left;
-                    outputR[i] = right;
+                    const t = i / outputL.length;
+                    outputL[i] = lastLeft + (targetLeft - lastLeft) * t;
+                    outputR[i] = lastRight + (targetRight - lastRight) * t;
                 }
+
+                lastLeft = targetLeft;
+                lastRight = targetRight;
             };
 
             // Connect to speakers (which Firefox routes to JACK)
