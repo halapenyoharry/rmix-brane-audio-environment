@@ -306,11 +306,11 @@
                         for (let i = 0; i < audioDataArray.length / 4; i++) {
                             sum += audioDataArray[i];
                         }
-                        // Center around 0 (no DC offset when silent)
                         const avg = sum / (audioDataArray.length / 4);
-                        force = (avg / 128 - 1) * 3;
-                        // Only apply if there's actual signal (above noise floor)
-                        if (Math.abs(force) < 0.1) force = 0;
+                        // Only apply force if there's actual signal above noise floor
+                        if (avg > 1) {
+                            force = (avg / 128 - 1) * 3;
+                        }
                     } else if (this.channel === 'right') {
                         // Use higher frequencies for right channel
                         let sum = 0;
@@ -318,8 +318,9 @@
                             sum += audioDataArray[i];
                         }
                         const avg = sum / (audioDataArray.length / 4);
-                        force = (avg / 128 - 1) * 3;
-                        if (Math.abs(force) < 0.1) force = 0;
+                        if (avg > 1) {
+                            force = (avg / 128 - 1) * 3;
+                        }
                     } else {
                         // Mono - use full spectrum
                         let sum = 0;
@@ -327,8 +328,9 @@
                             sum += audioDataArray[i];
                         }
                         const avg = sum / audioDataArray.length;
-                        force = (avg / 128 - 1) * 3;
-                        if (Math.abs(force) < 0.1) force = 0;
+                        if (avg > 1) {
+                            force = (avg / 128 - 1) * 3;
+                        }
                     }
                 }
 
