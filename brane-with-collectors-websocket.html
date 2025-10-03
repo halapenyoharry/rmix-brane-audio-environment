@@ -117,7 +117,8 @@
     <div id="instructions">
         <h3>Controls</h3>
         <div>
-            <kbd>Click</kbd> Add actuator<br>
+            <kbd>Click membrane</kbd> Add actuator<br>
+            <kbd>Click sphere</kbd> Remove it<br>
             <kbd>Shift+Click</kbd> Add collector<br>
             <kbd>Drag</kbd> Rotate view<br>
             <kbd>Scroll</kbd> Zoom<br>
@@ -126,8 +127,8 @@
             <kbd>D</kbd> Demo waves<br>
             <kbd>O</kbd> Connect WebSocket output<br>
             <kbd>R</kbd> Reset membrane<br>
-            <kbd>C</kbd> Clear actuators<br>
-            <kbd>M</kbd> Clear collectors
+            <kbd>C</kbd> Clear all actuators<br>
+            <kbd>M</kbd> Clear all collectors
         </div>
         <div style="margin-top: 15px; font-size: 10px; opacity: 0.7;">
             <strong>Actuators (solid):</strong><br>
@@ -300,21 +301,29 @@
                         for (let i = 0; i < audioDataArray.length / 4; i++) {
                             sum += audioDataArray[i];
                         }
-                        force = (sum / (audioDataArray.length / 4) / 128 - 1) * 3;
+                        // Center around 0 (no DC offset when silent)
+                        const avg = sum / (audioDataArray.length / 4);
+                        force = (avg / 128 - 1) * 3;
+                        // Only apply if there's actual signal (above noise floor)
+                        if (Math.abs(force) < 0.1) force = 0;
                     } else if (this.channel === 'right') {
                         // Use higher frequencies for right channel
                         let sum = 0;
                         for (let i = audioDataArray.length * 3/4; i < audioDataArray.length; i++) {
                             sum += audioDataArray[i];
                         }
-                        force = (sum / (audioDataArray.length / 4) / 128 - 1) * 3;
+                        const avg = sum / (audioDataArray.length / 4);
+                        force = (avg / 128 - 1) * 3;
+                        if (Math.abs(force) < 0.1) force = 0;
                     } else {
                         // Mono - use full spectrum
                         let sum = 0;
                         for (let i = 0; i < audioDataArray.length; i++) {
                             sum += audioDataArray[i];
                         }
-                        force = (sum / audioDataArray.length / 128 - 1) * 3;
+                        const avg = sum / audioDataArray.length;
+                        force = (avg / 128 - 1) * 3;
+                        if (Math.abs(force) < 0.1) force = 0;
                     }
                 }
 
@@ -662,19 +671,56 @@
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(membrane);
 
-            if (intersects.length > 0) {
-                const point = intersects[0].point;
-                let channel = 'mono';
-                if (point.x < -20) channel = 'left';
-                else if (point.x > 20) channel = 'right';
+            // First check if clicking on actuator or collector to remove
+            let clickedSphere = false;
 
-                // Shift+Click adds collector, regular click adds actuator
-                if (event.shiftKey) {
-                    addCollector(point.x, point.z, { channel: channel });
-                } else {
-                    addActuator(point.x, point.z, channel);
+            // Check actuators
+            for (let i = actuators.length - 1; i >= 0; i--) {
+                if (actuators[i].visual) {
+                    const intersects = raycaster.intersectObject(actuators[i].visual);
+                    if (intersects.length > 0) {
+                        scene.remove(actuators[i].visual);
+                        actuators.splice(i, 1);
+                        document.getElementById('actuator-count').textContent = actuators.length;
+                        clickedSphere = true;
+                        break;
+                    }
+                }
+            }
+
+            // Check collectors if no actuator was clicked
+            if (!clickedSphere) {
+                for (let i = collectors.length - 1; i >= 0; i--) {
+                    if (collectors[i].visual) {
+                        const intersects = raycaster.intersectObject(collectors[i].visual);
+                        if (intersects.length > 0) {
+                            scene.remove(collectors[i].visual);
+                            collectors.splice(i, 1);
+                            document.getElementById('collector-count').textContent = collectors.length;
+                            clickedSphere = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If no sphere clicked, add new one on membrane
+            if (!clickedSphere) {
+                const intersects = raycaster.intersectObject(membrane);
+
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    let channel = 'mono';
+                    if (point.x < -20) channel = 'left';
+                    else if (point.x > 20) channel = 'right';
+
+                    // Shift+Click adds collector, regular click adds actuator
+                    if (event.shiftKey) {
+                        addCollector(point.x, point.z, { channel: channel });
+                    } else {
+                        addActuator(point.x, point.z, channel);
+                    }
                 }
             }
         });
@@ -780,9 +826,7 @@
         // Initialize and start
         initializeArrays();
 
-        // Add demo actuator and collector
-        addActuator(0, 0, 'mono');
-        addCollector(20, 20, { channel: 'mono', mode: 'velocity' });
+        // Start with clean membrane (no default actuators/collectors)
 
         animate();
 
