@@ -309,7 +309,8 @@
                         const avg = sum / (audioDataArray.length / 4);
                         // Only apply force if there's actual signal above noise floor
                         if (avg > 1) {
-                            force = (avg / 128 - 1) * 3;
+                            // Removed -1 to eliminate DC bias that causes cone
+                            force = (avg / 128) * 3;
                         }
                     } else if (this.channel === 'right') {
                         // Use higher frequencies for right channel
@@ -319,7 +320,7 @@
                         }
                         const avg = sum / (audioDataArray.length / 4);
                         if (avg > 1) {
-                            force = (avg / 128 - 1) * 3;
+                            force = (avg / 128) * 3;
                         }
                     } else {
                         // Mono - use full spectrum
@@ -329,7 +330,7 @@
                         }
                         const avg = sum / audioDataArray.length;
                         if (avg > 1) {
-                            force = (avg / 128 - 1) * 3;
+                            force = (avg / 128) * 3;
                         }
                     }
                 }
