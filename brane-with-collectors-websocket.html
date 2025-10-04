@@ -269,6 +269,12 @@
         let websocket = null;
         let outputEnabled = false;
 
+        // Stereo channel analysers
+        let leftAnalyser = null;
+        let rightAnalyser = null;
+        let leftAudioData = null;
+        let rightAudioData = null;
+
         // Audio file playback
         let audioElement = null;
         let audioFileMode = false;
@@ -298,37 +304,36 @@
                     // Demo sine waves
                     const time = Date.now() * 0.001;
                     force = Math.sin(time * 2 + this.demoPhase) * 2;
-                } else if (audioEnabled && audioDataArray) {
-                    // Use real JACK audio waveform data (oscillates around 128)
+                } else if (audioEnabled && leftAudioData && rightAudioData) {
+                    // Use actual audio samples from correct channel
                     let sum = 0;
-                    let count = audioDataArray.length;
+                    let audioData;
 
-                    // For stereo channels, use different sample ranges
-                    // (This is still approximate - real stereo needs actual L/R streams)
+                    // Select the correct channel data
                     if (this.channel === 'left') {
-                        // Use first half of samples
-                        count = Math.floor(audioDataArray.length / 2);
-                        for (let i = 0; i < count; i++) {
-                            sum += audioDataArray[i];
-                        }
+                        audioData = leftAudioData;
                     } else if (this.channel === 'right') {
-                        // Use second half of samples
-                        const start = Math.floor(audioDataArray.length / 2);
-                        count = audioDataArray.length - start;
-                        for (let i = start; i < audioDataArray.length; i++) {
-                            sum += audioDataArray[i];
-                        }
+                        audioData = rightAudioData;
                     } else {
-                        // Mono - use all samples
-                        for (let i = 0; i < audioDataArray.length; i++) {
-                            sum += audioDataArray[i];
+                        // Mono - mix both channels
+                        // Average samples from both L and R
+                        for (let i = 0; i < leftAudioData.length; i++) {
+                            sum += leftAudioData[i] + rightAudioData[i];
                         }
+                        const avg = sum / (leftAudioData.length * 2);
+                        force = ((avg - 128) / 128) * 3;
+                        audioData = null;  // Skip single-channel processing below
                     }
 
-                    // Average and center around 128 (waveform center)
-                    const avg = sum / count;
-                    // Convert to force: 128 = 0 force, 0 = -max, 255 = +max
-                    force = ((avg - 128) / 128) * 3;
+                    // Process single channel (left or right)
+                    if (audioData) {
+                        for (let i = 0; i < audioData.length; i++) {
+                            sum += audioData[i];
+                        }
+                        const avg = sum / audioData.length;
+                        // Convert audio sample to force: 128 = 0, 0 = -max, 255 = +max
+                        force = ((avg - 128) / 128) * 3;
+                    }
                 }
 
                 // Apply force to membrane as an actuator
@@ -522,22 +527,38 @@
 
                 // Request JACK audio stream
                 audioStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { deviceId: 'jack-system-capture' }
+                    audio: {
+                        deviceId: 'jack-system-capture',
+                        channelCount: 2  // Request stereo
+                    }
                 });
 
-                // Create audio context and analyser
+                // Create audio context
                 audioContext = new AudioContext();
-                audioAnalyser = audioContext.createAnalyser();
-                audioAnalyser.fftSize = 256;
-                audioAnalyser.smoothingTimeConstant = 0.8;
-
-                audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
-
-                // Connect stream to analyser
                 const source = audioContext.createMediaStreamSource(audioStream);
-                source.connect(audioAnalyser);
 
-                console.log('JACK audio connected successfully!');
+                // Create channel splitter for true stereo separation
+                const splitter = audioContext.createChannelSplitter(2);
+                source.connect(splitter);
+
+                // Create separate analysers for left and right channels
+                leftAnalyser = audioContext.createAnalyser();
+                leftAnalyser.fftSize = 256;
+                leftAnalyser.smoothingTimeConstant = 0.3;
+
+                rightAnalyser = audioContext.createAnalyser();
+                rightAnalyser.fftSize = 256;
+                rightAnalyser.smoothingTimeConstant = 0.3;
+
+                // Connect split channels to their analysers
+                splitter.connect(leftAnalyser, 0);   // Channel 0 = Left
+                splitter.connect(rightAnalyser, 1);  // Channel 1 = Right
+
+                // Create data arrays for each channel
+                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
+                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+
+                console.log('JACK audio connected - stereo channels separated');
                 return true;
 
             } catch (error) {
@@ -547,23 +568,11 @@
             }
         }
 
-        // Update audio data
+        // Update audio data from stereo channels
         function updateAudioData() {
-            if (audioEnabled && audioAnalyser && audioDataArray) {
-                audioAnalyser.getByteTimeDomainData(audioDataArray);
-
-                // Debug: Check if we're getting any audio data
-                let maxLevel = 0;
-                for (let i = 0; i < audioDataArray.length; i++) {
-                    if (audioDataArray[i] > maxLevel) {
-                        maxLevel = audioDataArray[i];
-                    }
-                }
-
-                // Log every second if there's audio
-                if (Date.now() % 1000 < 16) {
-                    console.log('Audio max level:', maxLevel, 'First 10 values:', Array.from(audioDataArray.slice(0, 10)));
-                }
+            if (audioEnabled && leftAnalyser && rightAnalyser && leftAudioData && rightAudioData) {
+                leftAnalyser.getByteTimeDomainData(leftAudioData);
+                rightAnalyser.getByteTimeDomainData(rightAudioData);
             }
         }
 
