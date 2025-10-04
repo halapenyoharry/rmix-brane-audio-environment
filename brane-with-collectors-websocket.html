@@ -299,40 +299,36 @@
                     const time = Date.now() * 0.001;
                     force = Math.sin(time * 2 + this.demoPhase) * 2;
                 } else if (audioEnabled && audioDataArray) {
-                    // Use real JACK audio data
+                    // Use real JACK audio waveform data (oscillates around 128)
+                    let sum = 0;
+                    let count = audioDataArray.length;
+
+                    // For stereo channels, use different sample ranges
+                    // (This is still approximate - real stereo needs actual L/R streams)
                     if (this.channel === 'left') {
-                        // Use lower frequencies for left channel
-                        let sum = 0;
-                        for (let i = 0; i < audioDataArray.length / 4; i++) {
+                        // Use first half of samples
+                        count = Math.floor(audioDataArray.length / 2);
+                        for (let i = 0; i < count; i++) {
                             sum += audioDataArray[i];
-                        }
-                        const avg = sum / (audioDataArray.length / 4);
-                        // Only apply force if there's actual signal above noise floor
-                        if (avg > 1) {
-                            // Removed -1 to eliminate DC bias that causes cone
-                            force = (avg / 128) * 3;
                         }
                     } else if (this.channel === 'right') {
-                        // Use higher frequencies for right channel
-                        let sum = 0;
-                        for (let i = audioDataArray.length * 3/4; i < audioDataArray.length; i++) {
+                        // Use second half of samples
+                        const start = Math.floor(audioDataArray.length / 2);
+                        count = audioDataArray.length - start;
+                        for (let i = start; i < audioDataArray.length; i++) {
                             sum += audioDataArray[i];
                         }
-                        const avg = sum / (audioDataArray.length / 4);
-                        if (avg > 1) {
-                            force = (avg / 128) * 3;
-                        }
                     } else {
-                        // Mono - use full spectrum
-                        let sum = 0;
+                        // Mono - use all samples
                         for (let i = 0; i < audioDataArray.length; i++) {
                             sum += audioDataArray[i];
                         }
-                        const avg = sum / audioDataArray.length;
-                        if (avg > 1) {
-                            force = (avg / 128) * 3;
-                        }
                     }
+
+                    // Average and center around 128 (waveform center)
+                    const avg = sum / count;
+                    // Convert to force: 128 = 0 force, 0 = -max, 255 = +max
+                    force = ((avg - 128) / 128) * 3;
                 }
 
                 // Apply force to membrane as an actuator
@@ -554,7 +550,7 @@
         // Update audio data
         function updateAudioData() {
             if (audioEnabled && audioAnalyser && audioDataArray) {
-                audioAnalyser.getByteFrequencyData(audioDataArray);
+                audioAnalyser.getByteTimeDomainData(audioDataArray);
 
                 // Debug: Check if we're getting any audio data
                 let maxLevel = 0;
