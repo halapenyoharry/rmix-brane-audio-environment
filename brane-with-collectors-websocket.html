@@ -122,7 +122,8 @@
             <kbd>Shift+Click</kbd> Add collector<br>
             <kbd>Drag</kbd> Rotate view<br>
             <kbd>Scroll</kbd> Zoom<br>
-            <kbd>F</kbd> Load audio file<br>
+            <kbd>F</kbd> Fullscreen<br>
+            <kbd>L</kbd> Load audio file<br>
             <kbd>A</kbd> Connect to JACK input<br>
             <kbd>D</kbd> Demo waves<br>
             <kbd>O</kbd> Toggle audio output<br>
@@ -839,6 +840,13 @@
                     document.getElementById('mode-display').textContent = 'OFF';
                 }
             } else if (e.key === 'f' || e.key === 'F') {
+                // Toggle fullscreen
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            } else if (e.key === 'l' || e.key === 'L') {
                 // Load audio file
                 initAudioFile();
             } else if (e.key === 'd' || e.key === 'D') {
