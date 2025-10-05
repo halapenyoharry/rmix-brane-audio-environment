@@ -90,7 +90,7 @@
             right: 2px;
             width: 20px;
             height: 20px;
-            cursor: move;
+            cursor: pointer;
             overflow: hidden;
         }
 
@@ -134,7 +134,7 @@
             bottom: 0;
             width: 4px;
             background: transparent;
-            cursor: ew-resize;
+            cursor: pointer;
         }
 
         .resize-handle:hover {
@@ -1399,7 +1399,7 @@
                     left: ${initialPercent * 100}%;
                     top: 50%;
                     transform: translate(-50%, -50%);
-                    cursor: grab;
+                    cursor: pointer;
                 `;
                 track.appendChild(thumb);
 
@@ -1408,7 +1408,6 @@
                 thumb.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     isDragging = true;
-                    thumb.style.cursor = 'grabbing';
 
                     const rect = track.getBoundingClientRect();
 
@@ -1425,7 +1424,6 @@
 
                     function stopDrag() {
                         isDragging = false;
-                        thumb.style.cursor = 'grab';
                         document.removeEventListener('mousemove', handleDrag);
                         document.removeEventListener('mouseup', stopDrag);
                     }
