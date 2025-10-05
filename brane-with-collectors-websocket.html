@@ -25,52 +25,43 @@
             top: 0;
             left: 0;
             width: 100%;
-            height: calc(100% - 120px);
+            height: 100%;
         }
 
-        /* Tile Control System */
+        /* Tile Control System - Free Floating */
         #controls-container {
             position: fixed;
-            bottom: 0;
+            top: 0;
             left: 0;
             right: 0;
-            height: 120px;
-            padding: 20px;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow-x: auto;
-            overflow-y: hidden;
-            background: rgba(10, 14, 39, 0.3);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
+            bottom: 0;
+            pointer-events: none;
             z-index: 100;
-            user-select: none;
-            -webkit-user-select: none;
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         #controls-container.hidden {
-            height: 0;
-            padding: 0;
-            overflow: hidden;
+            opacity: 0;
+            pointer-events: none;
         }
 
         .control-tile {
+            position: absolute;
             height: 80px;
             background: rgba(10, 14, 39, 0.6);
             border: 1px solid rgba(0, 229, 255, 0.3);
             border-radius: 8px;
             padding: 12px;
-            transition: all 0.2s ease;
+            transition: border-color 0.2s ease, background 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
             min-width: 100px;
-            flex-shrink: 0;
             user-select: none;
             -webkit-user-select: none;
+            pointer-events: auto;
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
         }
 
         .control-tile:hover {
@@ -80,65 +71,9 @@
         }
 
         .control-tile.dragging {
-            opacity: 0.5;
-            border-color: rgba(0, 229, 255, 0.7) !important;
-        }
-
-        .drag-handle {
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            width: 20px;
-            height: 20px;
-            cursor: pointer;
-            overflow: hidden;
-        }
-
-        .drag-handle::before,
-        .drag-handle::after,
-        .drag-handle span {
-            position: absolute;
-            height: 2px;
-            background: #00e5ff;
-            opacity: 0.3;
-            right: 0;
-        }
-
-        .drag-handle::before {
-            content: '';
-            width: 14px;
-            bottom: 2px;
-        }
-
-        .drag-handle::after {
-            content: '';
-            width: 10px;
-            bottom: 6px;
-        }
-
-        .drag-handle span {
-            width: 6px;
-            bottom: 10px;
-        }
-
-        .drag-handle:hover::before,
-        .drag-handle:hover::after,
-        .drag-handle:hover span {
             opacity: 0.7;
-        }
-
-        .resize-handle {
-            position: absolute;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            width: 4px;
-            background: transparent;
-            cursor: pointer;
-        }
-
-        .resize-handle:hover {
-            background: rgba(0, 229, 255, 0.4);
+            border-color: rgba(0, 229, 255, 0.8) !important;
+            cursor: move;
         }
 
         .param-visual {
@@ -1004,69 +939,103 @@
 
         let controlsHidden = false;
 
-        // Tile configuration
-        const tiles = [
-            { id: 'audio-input', type: 'audio-input', width: 140 },
-            { id: 'audio-output', type: 'audio-output', width: 100 },
-            { id: 'membrane-ops', type: 'membrane-ops', width: 120 },
-            { id: 'counts', type: 'counts', width: 150 },
-            { id: 'physics', type: 'physics', width: 200 },
-            { id: 'view', type: 'view', width: 100 }
-        ];
+        // Tile configuration - will be loaded from JSON
+        let tilesConfig = null;
+        let tilePositions = {}; // Track tile positions for drag
 
-        // Create all tiles
-        function createTiles() {
-            const container = document.getElementById('controls-container');
+        // Load config and create tiles
+        async function createTiles() {
+            // Load JSON config
+            const response = await fetch('tiles-config.json');
+            tilesConfig = await response.json();
 
-            tiles.forEach(tileConfig => {
-                const tileDiv = document.createElement('div');
-                tileDiv.className = 'control-tile';
-                tileDiv.id = `tile-${tileConfig.id}`;
-                tileDiv.style.width = `${tileConfig.width}px`;
-                tileDiv.setAttribute('data-id', tileConfig.id);
-
-                // Add resize handle
-                const resizeHandle = document.createElement('div');
-                resizeHandle.className = 'resize-handle';
-                tileDiv.appendChild(resizeHandle);
-
-                // Add drag handle
-                const dragHandle = document.createElement('div');
-                dragHandle.className = 'drag-handle';
-                const dragSpan = document.createElement('span');
-                dragHandle.appendChild(dragSpan);
-                tileDiv.appendChild(dragHandle);
-
-                // Add visual container
-                const visual = document.createElement('div');
-                visual.className = 'param-visual';
-                tileDiv.appendChild(visual);
-
-                // Add label area
-                const label = document.createElement('div');
-                label.className = 'tile-label';
-                tileDiv.appendChild(label);
-
-                // Create tile content based on type
-                if (tileConfig.type === 'audio-input') {
-                    createAudioInputTile(visual, label);
-                } else if (tileConfig.type === 'audio-output') {
-                    createAudioOutputTile(visual, label);
-                } else if (tileConfig.type === 'membrane-ops') {
-                    createMembraneOpsTile(visual, label);
-                } else if (tileConfig.type === 'counts') {
-                    createCountsTile(visual, label);
-                } else if (tileConfig.type === 'physics') {
-                    createPhysicsTile(visual, label);
-                } else if (tileConfig.type === 'view') {
-                    createViewTile(visual, label);
-                }
-
-                container.appendChild(tileDiv);
+            // Initialize tile positions (bottom of screen, spread horizontally)
+            const startY = window.innerHeight - 140;
+            let xOffset = 20;
+            tilesConfig.tiles.forEach(tile => {
+                tilePositions[tile.id] = { x: xOffset, y: startY };
+                xOffset += (tile.width || 100) + 20;
             });
 
-            enableTileDragging();
-            enableResizing();
+            // D3 tile creation
+            const container = d3.select('#controls-container');
+
+            // D3 data binding for tiles
+            const tileDivs = container
+                .selectAll('.control-tile')
+                .data(tilesConfig.tiles, d => d.id)
+                .join(
+                    enter => {
+                        const tile = enter.append('div')
+                            .attr('class', 'control-tile')
+                            .attr('id', d => `tile-${d.id}`)
+                            .style('width', d => `${d.width || 100}px`)
+                            .style('left', d => `${tilePositions[d.id].x}px`)
+                            .style('top', d => `${tilePositions[d.id].y}px`)
+                            .call(createD3Drag());
+
+                        // Add visual container
+                        tile.append('div')
+                            .attr('class', 'param-visual')
+                            .each(function(d) {
+                                const visual = this;
+                                const label = d3.select(visual.parentNode)
+                                    .append('div')
+                                    .attr('class', 'tile-label')
+                                    .node();
+
+                                // Create tile content based on type
+                                createTileContent(d, visual, label);
+                            });
+
+                        return tile;
+                    },
+                    update => update,
+                    exit => exit.remove()
+                );
+        }
+
+        // D3 Drag handler with hard boundaries
+        function createD3Drag() {
+            return d3.drag()
+                .on('start', function(event, d) {
+                    d3.select(this).classed('dragging', true);
+                })
+                .on('drag', function(event, d) {
+                    const tile = d3.select(this);
+                    const width = parseInt(tile.style('width'));
+                    const height = 80; // Fixed tile height
+
+                    // Hard boundaries
+                    const x = Math.max(0, Math.min(window.innerWidth - width, event.x));
+                    const y = Math.max(0, Math.min(window.innerHeight - height, event.y));
+
+                    tile.style('left', `${x}px`)
+                        .style('top', `${y}px`);
+
+                    // Update position tracker
+                    tilePositions[d.id] = { x, y };
+                })
+                .on('end', function(event, d) {
+                    d3.select(this).classed('dragging', false);
+                });
+        }
+
+        // Route to appropriate tile creator based on type
+        function createTileContent(tileData, visual, label) {
+            if (tileData.type === 'audio-control') {
+                createAudioTile(visual, label, tileData);
+            } else if (tileData.type === 'sliders') {
+                createPhysicsTile(visual, label, tileData);
+            } else if (tileData.type === 'button-group') {
+                if (tileData.id === 'membrane-ops') {
+                    createMembraneOpsTile(visual, label, tileData);
+                } else if (tileData.id === 'view') {
+                    createViewTile(visual, label, tileData);
+                }
+            } else if (tileData.type === 'mini-membrane') {
+                createMiniMembraneTile(visual, label, tileData);
+            }
         }
 
         // ============================================
@@ -1552,87 +1521,11 @@
             visual.appendChild(container);
         }
 
-        // Enable tile dragging
-        function enableTileDragging() {
-            const tileDivs = document.querySelectorAll('.control-tile');
-
-            tileDivs.forEach(tile => {
-                const dragHandle = tile.querySelector('.drag-handle');
-                if (!dragHandle) return;
-
-                dragHandle.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    tile.classList.add('dragging');
-
-                    function handleMouseMove(e) {
-                        const container = document.getElementById('controls-container');
-                        const afterElement = getDragAfterElement(container, e.clientX);
-
-                        if (afterElement == null) {
-                            container.appendChild(tile);
-                        } else if (afterElement !== tile) {
-                            container.insertBefore(tile, afterElement);
-                        }
-                    }
-
-                    function handleMouseUp() {
-                        tile.classList.remove('dragging');
-                        document.removeEventListener('mousemove', handleMouseMove);
-                        document.removeEventListener('mouseup', handleMouseUp);
-                    }
-
-                    document.addEventListener('mousemove', handleMouseMove);
-                    document.addEventListener('mouseup', handleMouseUp);
-                });
-            });
-        }
-
-        function getDragAfterElement(container, x) {
-            const elements = [...container.querySelectorAll('.control-tile:not(.dragging)')];
-            return elements.reduce((closest, child) => {
-                const box = child.getBoundingClientRect();
-                const offset = x - box.left - box.width / 2;
-                if (offset < 0 && offset > closest.offset) {
-                    return { offset: offset, element: child };
-                }
-                return closest;
-            }, { offset: Number.NEGATIVE_INFINITY }).element;
-        }
-
-        // Enable tile resizing
-        function enableResizing() {
-            const handles = document.querySelectorAll('.resize-handle');
-
-            handles.forEach(handle => {
-                handle.addEventListener('mousedown', (e) => {
-                    const tile = handle.parentElement;
-                    const startX = e.clientX;
-                    const startWidth = parseInt(window.getComputedStyle(tile).width, 10);
-
-                    function doDrag(e) {
-                        const newWidth = startWidth + e.clientX - startX;
-                        if (newWidth >= 80 && newWidth <= 400) {
-                            tile.style.width = newWidth + 'px';
-                        }
-                    }
-
-                    function stopDrag() {
-                        document.removeEventListener('mousemove', doDrag);
-                        document.removeEventListener('mouseup', stopDrag);
-                    }
-
-                    document.addEventListener('mousemove', doDrag);
-                    document.addEventListener('mouseup', stopDrag);
-                });
-            });
-        }
-
         // Handle resize
         function handleResize() {
-            const controlsHeight = controlsHidden ? 0 : 120;
-            camera.aspect = window.innerWidth / (window.innerHeight - controlsHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight - controlsHeight);
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
         window.addEventListener('resize', handleResize);
