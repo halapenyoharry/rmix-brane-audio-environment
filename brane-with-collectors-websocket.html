@@ -25,55 +25,129 @@
             top: 0;
             left: 0;
             width: 100%;
-            height: 100%;
+            height: calc(100% - 120px);
         }
 
-        /* Audio Status */
-        #audio-status {
+        /* Tile Control System */
+        #controls-container {
             position: fixed;
-            top: 30px;
-            left: 30px;
-            background: rgba(10, 14, 39, 0.85);
-            backdrop-filter: blur(20px);
-            padding: 15px;
-            border-radius: 12px;
-            border: 2px solid rgba(0, 229, 255, 0.2);
-            box-shadow: 0 0 40px rgba(0, 229, 255, 0.1);
-            z-index: 100;
-            color: #00e5ff;
-            font-size: 12px;
-        }
-
-        /* Instructions */
-        #instructions {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(10, 14, 39, 0.85);
-            backdrop-filter: blur(20px);
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 120px;
             padding: 20px;
-            border-radius: 15px;
-            border: 1px solid rgba(0, 229, 255, 0.2);
-            font-size: 12px;
-            max-width: 300px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-x: auto;
+            overflow-y: hidden;
+            background: rgba(10, 14, 39, 0.3);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
             z-index: 100;
-            line-height: 1.8;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        #instructions h3 {
-            color: #18ffff;
-            margin-bottom: 10px;
-            font-weight: 300;
-            text-transform: uppercase;
-            letter-spacing: 2px;
+        #controls-container.hidden {
+            height: 0;
+            padding: 0;
+            overflow: hidden;
         }
 
-        #instructions kbd {
-            background: rgba(26, 35, 126, 0.4);
-            padding: 2px 6px;
-            border-radius: 4px;
-            border: 1px solid rgba(0, 229, 255, 0.2);
-            margin: 0 2px;
+        .control-tile {
+            height: 80px;
+            background: rgba(10, 14, 39, 0.6);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            min-width: 100px;
+            flex-shrink: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .control-tile:hover {
+            border-color: rgba(0, 229, 255, 0.5);
+            background: rgba(10, 14, 39, 0.8);
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.2);
+        }
+
+        .control-tile.dragging {
+            opacity: 0.5;
+            border-color: rgba(0, 229, 255, 0.7) !important;
+        }
+
+        .drag-handle {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 20px;
+            height: 20px;
+            cursor: move;
+            overflow: hidden;
+        }
+
+        .drag-handle::before,
+        .drag-handle::after,
+        .drag-handle span {
+            position: absolute;
+            height: 2px;
+            background: #00e5ff;
+            opacity: 0.3;
+            right: 0;
+        }
+
+        .drag-handle::before {
+            content: '';
+            width: 14px;
+            bottom: 2px;
+        }
+
+        .drag-handle::after {
+            content: '';
+            width: 10px;
+            bottom: 6px;
+        }
+
+        .drag-handle span {
+            width: 6px;
+            bottom: 10px;
+        }
+
+        .drag-handle:hover::before,
+        .drag-handle:hover::after,
+        .drag-handle:hover span {
+            opacity: 0.7;
+        }
+
+        .resize-handle {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: transparent;
+            cursor: ew-resize;
+        }
+
+        .resize-handle:hover {
+            background: rgba(0, 229, 255, 0.4);
+        }
+
+        .param-visual {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         #loading {
@@ -91,56 +165,9 @@
     <div id="loading">Loading Three.js...</div>
     <div id="canvas-container"></div>
 
-    <div id="audio-status">
-        <div style="margin-bottom: 8px;">
-            <span style="font-weight: bold;">AUDIO:</span>
-            <span id="audio-indicator" style="color: #ff0000;">OFF</span>
-        </div>
-        <div style="margin-bottom: 8px;">
-            <span>MODE:</span>
-            <span id="mode-display">DEMO</span>
-        </div>
-        <div>
-            <span>ACTUATORS:</span>
-            <span id="actuator-count">0</span>
-        </div>
-        <div>
-            <span>COLLECTORS:</span>
-            <span id="collector-count">0</span>
-        </div>
-        <div style="margin-top: 8px;">
-            <span style="font-weight: bold;">OUTPUT:</span>
-            <span id="output-indicator" style="color: #ff0000;">OFF</span>
-        </div>
-    </div>
-
-    <div id="instructions">
-        <h3>Controls</h3>
-        <div>
-            <kbd>Click membrane</kbd> Add actuator<br>
-            <kbd>Click sphere</kbd> Remove it<br>
-            <kbd>Shift+Click</kbd> Add collector<br>
-            <kbd>Drag</kbd> Rotate view<br>
-            <kbd>Scroll</kbd> Zoom<br>
-            <kbd>F</kbd> Fullscreen<br>
-            <kbd>L</kbd> Load audio file<br>
-            <kbd>A</kbd> Connect to JACK input<br>
-            <kbd>D</kbd> Demo waves<br>
-            <kbd>O</kbd> Toggle audio output<br>
-            <kbd>R</kbd> Reset membrane<br>
-            <kbd>C</kbd> Clear all actuators<br>
-            <kbd>M</kbd> Clear all collectors
-        </div>
-        <div style="margin-top: 15px; font-size: 10px; opacity: 0.7;">
-            <strong>Actuators (solid):</strong><br>
-            <div style="display: inline-block; width: 12px; height: 12px; background: #ff00ff; margin-right: 5px;"></div>LEFT
-            <div style="display: inline-block; width: 12px; height: 12px; background: #00ffff; margin: 0 5px;"></div>RIGHT
-            <div style="display: inline-block; width: 12px; height: 12px; background: #ffff00; margin: 0 5px;"></div>MONO
-        </div>
-        <div style="margin-top: 8px; font-size: 10px; opacity: 0.7;">
-            <strong>Collectors (wireframe):</strong><br>
-            <div style="display: inline-block; width: 12px; height: 12px; background: #00ff00; margin-right: 5px;"></div>GREEN
-        </div>
+    <!-- Tile-based control panel -->
+    <div id="controls-container">
+        <!-- Tiles will be created dynamically by JavaScript -->
     </div>
 
     <!-- Load Three.js from CDN -->
@@ -406,6 +433,51 @@
             }
         }
 
+        // Helper functions for membrane operations
+        function resetMembrane() {
+            initializeArrays();
+        }
+
+        function clearActuators() {
+            actuators.forEach(act => {
+                if (act.visual) scene.remove(act.visual);
+            });
+            actuators = [];
+            updateCounts();
+        }
+
+        function clearCollectors() {
+            collectors.forEach(col => {
+                if (col.visual) scene.remove(col.visual);
+            });
+            collectors = [];
+            updateCounts();
+        }
+
+        // Audio control wrappers for tiles
+        async function connectJACK() {
+            const success = await initJackAudio();
+            if (success) {
+                audioEnabled = true;
+                demoMode = false;
+                updateAudioInputToggles();
+            }
+        }
+
+        function loadAudioFile() {
+            initAudioFile();
+            // Update will happen in initAudioFile callback
+        }
+
+        function toggleAudioOutput() {
+            if (!outputEnabled) {
+                initAudioOutput();
+            } else {
+                stopAudioOutput();
+            }
+            updateAudioOutputToggle();
+        }
+
         // Add actuator
         function addActuator(x, y, channel = 'mono') {
             const actuator = new Actuator(x, y, channel);
@@ -426,7 +498,7 @@
             scene.add(indicator);
             actuator.visual = indicator;
 
-            document.getElementById('actuator-count').textContent = actuators.length;
+            updateCounts();
             return actuator;
         }
 
@@ -450,7 +522,7 @@
             scene.add(indicator);
             collector.visual = indicator;
 
-            document.getElementById('collector-count').textContent = collectors.length;
+            updateCounts();
             console.log(`Added collector at (${x.toFixed(1)}, ${y.toFixed(1)}) - ${config.channel || 'mono'} - ${config.mode || 'velocity'}`);
             return collector;
         }
@@ -771,7 +843,7 @@
                     if (intersects.length > 0) {
                         scene.remove(actuators[i].visual);
                         actuators.splice(i, 1);
-                        document.getElementById('actuator-count').textContent = actuators.length;
+                        updateCounts();
                         clickedSphere = true;
                         break;
                     }
@@ -786,7 +858,7 @@
                         if (intersects.length > 0) {
                             scene.remove(collectors[i].visual);
                             collectors.splice(i, 1);
-                            document.getElementById('collector-count').textContent = collectors.length;
+                            updateCounts();
                             clickedSphere = true;
                             break;
                         }
@@ -816,6 +888,15 @@
 
         // Keyboard controls
         document.addEventListener('keydown', async (e) => {
+            // Shift+H to toggle controls
+            if (e.shiftKey && (e.key === 'h' || e.key === 'H')) {
+                const container = document.getElementById('controls-container');
+                controlsHidden = !controlsHidden;
+                container.classList.toggle('hidden');
+                handleResize();
+                return;
+            }
+
             if (e.key === 'a' || e.key === 'A') {
                 // Toggle JACK audio
                 if (!audioEnabled) {
@@ -823,9 +904,7 @@
                     if (success) {
                         audioEnabled = true;
                         demoMode = false;
-                        document.getElementById('audio-indicator').textContent = 'JACK';
-                        document.getElementById('audio-indicator').style.color = '#00ff00';
-                        document.getElementById('mode-display').textContent = 'JACK';
+                        updateAudioInputToggles();
                     }
                 } else {
                     audioEnabled = false;
@@ -835,9 +914,7 @@
                     if (audioContext) {
                         audioContext.close();
                     }
-                    document.getElementById('audio-indicator').textContent = 'OFF';
-                    document.getElementById('audio-indicator').style.color = '#ff0000';
-                    document.getElementById('mode-display').textContent = 'OFF';
+                    updateAudioInputToggles();
                 }
             } else if (e.key === 'f' || e.key === 'F') {
                 // Toggle fullscreen
@@ -852,17 +929,15 @@
             } else if (e.key === 'd' || e.key === 'D') {
                 // Toggle demo mode
                 demoMode = !demoMode;
-                document.getElementById('mode-display').textContent = demoMode ? 'DEMO' : 'OFF';
 
                 if (demoMode) {
                     audioEnabled = false;
                     audioFileMode = false;
-                    document.getElementById('audio-indicator').textContent = 'OFF';
-                    document.getElementById('audio-indicator').style.color = '#ff0000';
                     if (audioElement) {
                         audioElement.pause();
                     }
                 }
+                updateAudioInputToggles();
             } else if (e.key === 'o' || e.key === 'O') {
                 // Toggle audio output
                 if (!audioOutputEnabled) {
@@ -871,19 +946,11 @@
                     stopAudioOutput();
                 }
             } else if (e.key === 'r' || e.key === 'R') {
-                initializeArrays();
+                resetMembrane();
             } else if (e.key === 'c' || e.key === 'C') {
-                actuators.forEach(act => {
-                    if (act.visual) scene.remove(act.visual);
-                });
-                actuators = [];
-                document.getElementById('actuator-count').textContent = '0';
+                clearActuators();
             } else if (e.key === 'm' || e.key === 'M') {
-                collectors.forEach(col => {
-                    if (col.visual) scene.remove(col.visual);
-                });
-                collectors = [];
-                document.getElementById('collector-count').textContent = '0';
+                clearCollectors();
             }
         });
 
@@ -909,17 +976,604 @@
             renderer.render(scene, camera);
         }
 
+        // ============================================
+        // TILE CONTROL SYSTEM
+        // ============================================
+
+        let controlsHidden = false;
+
+        // Tile configuration
+        const tiles = [
+            { id: 'audio-input', type: 'audio-input', width: 140 },
+            { id: 'audio-output', type: 'audio-output', width: 100 },
+            { id: 'membrane-ops', type: 'membrane-ops', width: 120 },
+            { id: 'counts', type: 'counts', width: 150 },
+            { id: 'physics', type: 'physics', width: 200 },
+            { id: 'view', type: 'view', width: 100 }
+        ];
+
+        // Create all tiles
+        function createTiles() {
+            const container = document.getElementById('controls-container');
+
+            tiles.forEach(tileConfig => {
+                const tileDiv = document.createElement('div');
+                tileDiv.className = 'control-tile';
+                tileDiv.id = `tile-${tileConfig.id}`;
+                tileDiv.style.width = `${tileConfig.width}px`;
+                tileDiv.setAttribute('data-id', tileConfig.id);
+
+                // Add resize handle
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'resize-handle';
+                tileDiv.appendChild(resizeHandle);
+
+                // Add drag handle
+                const dragHandle = document.createElement('div');
+                dragHandle.className = 'drag-handle';
+                const dragSpan = document.createElement('span');
+                dragHandle.appendChild(dragSpan);
+                tileDiv.appendChild(dragHandle);
+
+                // Add visual container
+                const visual = document.createElement('div');
+                visual.className = 'param-visual';
+                tileDiv.appendChild(visual);
+
+                // Create tile content based on type
+                if (tileConfig.type === 'audio-input') {
+                    createAudioInputTile(visual);
+                } else if (tileConfig.type === 'audio-output') {
+                    createAudioOutputTile(visual);
+                } else if (tileConfig.type === 'membrane-ops') {
+                    createMembraneOpsTile(visual);
+                } else if (tileConfig.type === 'counts') {
+                    createCountsTile(visual);
+                } else if (tileConfig.type === 'physics') {
+                    createPhysicsTile(visual);
+                } else if (tileConfig.type === 'view') {
+                    createViewTile(visual);
+                }
+
+                container.appendChild(tileDiv);
+            });
+
+            enableTileDragging();
+            enableResizing();
+        }
+
+        // ============================================
+        // INDIVIDUAL TILE CREATORS
+        // ============================================
+
+        // AUDIO INPUT TILE - Three mode toggles (DEMO/FILE/JACK)
+        function createAudioInputTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; justify-content: center; align-items: center;';
+
+            const modes = ['demo', 'file', 'jack'];
+            const modeToggles = {};
+
+            modes.forEach((mode, index) => {
+                const modeRow = document.createElement('div');
+                modeRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+
+                const indicator = document.createElement('div');
+                indicator.style.cssText = `
+                    width: 12px; height: 12px;
+                    background: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '#00ff00' : 'rgba(0, 229, 255, 0.2)'};
+                    border-radius: 50%;
+                    transition: background 0.2s;
+                    box-shadow: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '0 0 8px #00ff00' : 'none'};
+                `;
+                modeToggles[mode] = indicator;
+
+                const toggle = document.createElement('div');
+                toggle.style.cssText = `
+                    width: 36px; height: 16px;
+                    background: rgba(0, 229, 255, ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '0.4' : '0.2'});
+                    border-radius: 8px;
+                    position: relative;
+                    cursor: pointer;
+                    transition: background 0.2s;
+                `;
+
+                const knob = document.createElement('div');
+                knob.style.cssText = `
+                    position: absolute;
+                    width: 12px; height: 12px;
+                    background: #00e5ff;
+                    border-radius: 50%;
+                    top: 2px;
+                    left: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '22px' : '2px'};
+                    transition: left 0.2s;
+                `;
+                toggle.appendChild(knob);
+
+                toggle.addEventListener('click', () => {
+                    if (mode === 'demo') {
+                        // Toggle demo mode
+                        demoMode = !demoMode;
+                        if (demoMode) {
+                            audioEnabled = false;
+                        }
+                    } else if (mode === 'file') {
+                        // Trigger file load
+                        loadAudioFile();
+                    } else if (mode === 'jack') {
+                        // Toggle JACK connection
+                        if (!audioEnabled) {
+                            connectJACK();
+                        } else {
+                            audioEnabled = false;
+                            demoMode = false;
+                        }
+                    }
+
+                    // Update all toggles
+                    updateAudioInputToggles();
+                });
+
+                modeRow.appendChild(indicator);
+                modeRow.appendChild(toggle);
+                container.appendChild(modeRow);
+            });
+
+            visual.appendChild(container);
+
+            // Store reference for updates
+            visual.modeToggles = modeToggles;
+        }
+
+        function updateAudioInputToggles() {
+            const tile = document.getElementById('tile-audio-input');
+            if (!tile) return;
+
+            const visual = tile.querySelector('.param-visual');
+            if (!visual || !visual.modeToggles) return;
+
+            const modes = {
+                demo: demoMode,
+                file: false, // momentary
+                jack: audioEnabled && !demoMode
+            };
+
+            Object.keys(modes).forEach(mode => {
+                const indicator = visual.modeToggles[mode];
+                const isActive = modes[mode];
+
+                indicator.style.background = isActive ? '#00ff00' : 'rgba(0, 229, 255, 0.2)';
+                indicator.style.boxShadow = isActive ? '0 0 8px #00ff00' : 'none';
+
+                const toggle = indicator.parentElement.querySelector('div:last-child');
+                const knob = toggle.querySelector('div');
+                toggle.style.background = `rgba(0, 229, 255, ${isActive ? '0.4' : '0.2'})`;
+                knob.style.left = isActive ? '22px' : '2px';
+            });
+        }
+
+        // AUDIO OUTPUT TILE - Single toggle for output
+        function createAudioOutputTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%;';
+
+            const indicator = document.createElement('div');
+            indicator.style.cssText = `
+                width: 16px; height: 16px;
+                background: ${outputEnabled ? '#00ff00' : 'rgba(0, 229, 255, 0.2)'};
+                border-radius: 50%;
+                transition: background 0.2s;
+                box-shadow: ${outputEnabled ? '0 0 10px #00ff00' : 'none'};
+            `;
+
+            const toggle = document.createElement('div');
+            toggle.style.cssText = `
+                width: 48px; height: 24px;
+                background: rgba(0, 229, 255, ${outputEnabled ? '0.4' : '0.2'});
+                border-radius: 12px;
+                position: relative;
+                cursor: pointer;
+                transition: background 0.2s;
+            `;
+
+            const knob = document.createElement('div');
+            knob.style.cssText = `
+                position: absolute;
+                width: 20px; height: 20px;
+                background: #00e5ff;
+                border-radius: 50%;
+                top: 2px;
+                left: ${outputEnabled ? '26px' : '2px'};
+                transition: left 0.2s;
+            `;
+            toggle.appendChild(knob);
+
+            toggle.addEventListener('click', () => {
+                toggleAudioOutput();
+                updateAudioOutputToggle();
+            });
+
+            container.appendChild(indicator);
+            container.appendChild(toggle);
+            visual.appendChild(container);
+
+            // Store reference
+            visual.indicator = indicator;
+            visual.toggle = toggle;
+            visual.knob = knob;
+        }
+
+        function updateAudioOutputToggle() {
+            const tile = document.getElementById('tile-audio-output');
+            if (!tile) return;
+
+            const visual = tile.querySelector('.param-visual');
+            if (!visual || !visual.indicator) return;
+
+            visual.indicator.style.background = outputEnabled ? '#00ff00' : 'rgba(0, 229, 255, 0.2)';
+            visual.indicator.style.boxShadow = outputEnabled ? '0 0 10px #00ff00' : 'none';
+            visual.toggle.style.background = `rgba(0, 229, 255, ${outputEnabled ? '0.4' : '0.2'})`;
+            visual.knob.style.left = outputEnabled ? '26px' : '2px';
+        }
+
+        // MEMBRANE OPS TILE - Reset and clear buttons
+        function createMembraneOpsTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; width: 100%; height: 100%;';
+
+            const ops = [
+                { id: 'reset', color: '#ff5555', action: resetMembrane },
+                { id: 'clear-act', color: '#ff9955', action: clearActuators },
+                { id: 'clear-col', color: '#ff9955', action: clearCollectors }
+            ];
+
+            ops.forEach(op => {
+                const button = document.createElement('div');
+                button.style.cssText = `
+                    width: 100%; height: 100%;
+                    background: rgba(${parseInt(op.color.substring(1,3), 16)}, ${parseInt(op.color.substring(3,5), 16)}, ${parseInt(op.color.substring(5,7), 16)}, 0.2);
+                    border: 1px solid ${op.color};
+                    border-radius: 50%;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                `;
+
+                const dot = document.createElement('div');
+                dot.style.cssText = `
+                    width: 50%; height: 50%;
+                    background: ${op.color};
+                    border-radius: 50%;
+                    transition: transform 0.1s;
+                `;
+                button.appendChild(dot);
+
+                button.addEventListener('mousedown', () => {
+                    dot.style.transform = 'scale(0.8)';
+                });
+
+                button.addEventListener('mouseup', () => {
+                    dot.style.transform = 'scale(1)';
+                    op.action();
+                });
+
+                button.addEventListener('mouseleave', () => {
+                    dot.style.transform = 'scale(1)';
+                });
+
+                button.addEventListener('mouseenter', () => {
+                    button.style.boxShadow = `0 0 10px ${op.color}`;
+                });
+
+                button.addEventListener('mouseleave', () => {
+                    button.style.boxShadow = 'none';
+                });
+
+                container.appendChild(button);
+            });
+
+            visual.appendChild(container);
+        }
+
+        // COUNTS TILE - Actuator and collector counts
+        function createCountsTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; flex-direction: column; gap: 8px; justify-content: center; height: 100%; padding: 8px;';
+
+            // Actuator row
+            const actRow = document.createElement('div');
+            actRow.style.cssText = 'display: flex; gap: 4px; align-items: center; justify-content: space-around;';
+
+            const actColors = ['#ff00ff', '#00ffff', '#ffff00'];
+            actColors.forEach((color, i) => {
+                const circle = document.createElement('div');
+                circle.style.cssText = `
+                    width: 14px; height: 14px;
+                    background: ${color};
+                    border-radius: 50%;
+                    position: relative;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 8px;
+                    font-weight: bold;
+                    color: #000;
+                `;
+                const count = document.createElement('span');
+                count.textContent = '0';
+                count.style.cssText = 'font-size: 7px; font-weight: bold;';
+                circle.appendChild(count);
+                circle.countSpan = count;
+                actRow.appendChild(circle);
+
+                if (i === 0) visual.leftCount = count;
+                if (i === 1) visual.rightCount = count;
+                if (i === 2) visual.monoCount = count;
+            });
+
+            // Collector row
+            const colRow = document.createElement('div');
+            colRow.style.cssText = 'display: flex; gap: 4px; align-items: center; justify-content: center;';
+
+            const colCircle = document.createElement('div');
+            colCircle.style.cssText = `
+                width: 14px; height: 14px;
+                background: #00ff00;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 8px;
+                font-weight: bold;
+                color: #000;
+            `;
+            const colCount = document.createElement('span');
+            colCount.textContent = '0';
+            colCount.style.cssText = 'font-size: 7px; font-weight: bold;';
+            colCircle.appendChild(colCount);
+            visual.collectorCount = colCount;
+            colRow.appendChild(colCircle);
+
+            container.appendChild(actRow);
+            container.appendChild(colRow);
+            visual.appendChild(container);
+        }
+
+        function updateCounts() {
+            const tile = document.getElementById('tile-counts');
+            if (!tile) return;
+
+            const visual = tile.querySelector('.param-visual');
+            if (!visual) return;
+
+            let leftCnt = 0, rightCnt = 0, monoCnt = 0, collCnt = 0;
+
+            actuators.forEach(act => {
+                if (act.channel === 'left') leftCnt++;
+                else if (act.channel === 'right') rightCnt++;
+                else if (act.channel === 'mono') monoCnt++;
+            });
+
+            collCnt = collectors.length;
+
+            if (visual.leftCount) visual.leftCount.textContent = leftCnt;
+            if (visual.rightCount) visual.rightCount.textContent = rightCnt;
+            if (visual.monoCount) visual.monoCount.textContent = monoCnt;
+            if (visual.collectorCount) visual.collectorCount.textContent = collCnt;
+        }
+
+        // PHYSICS TILE - Three horizontal sliders for physics params
+        function createPhysicsTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; padding: 8px; width: 100%; height: 100%; justify-content: center;';
+
+            const params = [
+                { id: 'waveSpeed', min: 0.05, max: 0.3, default: waveSpeed },
+                { id: 'damping', min: 0.001, max: 0.05, default: damping },
+                { id: 'gain', min: 0.5, max: 5.0, default: 3.0 }
+            ];
+
+            params.forEach(param => {
+                const sliderRow = document.createElement('div');
+                sliderRow.style.cssText = 'display: flex; align-items: center; width: 100%;';
+
+                const track = document.createElement('div');
+                track.style.cssText = `
+                    flex: 1;
+                    height: 3px;
+                    background: rgba(0, 229, 255, 0.3);
+                    border-radius: 2px;
+                    position: relative;
+                    cursor: pointer;
+                `;
+
+                const thumb = document.createElement('div');
+                const initialPercent = (param.default - param.min) / (param.max - param.min);
+                thumb.style.cssText = `
+                    position: absolute;
+                    width: 10px; height: 10px;
+                    background: #00e5ff;
+                    border-radius: 50%;
+                    left: ${initialPercent * 100}%;
+                    top: 50%;
+                    transform: translate(-50%, -50%);
+                    cursor: grab;
+                `;
+                track.appendChild(thumb);
+
+                let isDragging = false;
+
+                thumb.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    isDragging = true;
+                    thumb.style.cursor = 'grabbing';
+
+                    const rect = track.getBoundingClientRect();
+
+                    function handleDrag(e) {
+                        if (!isDragging) return;
+                        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        thumb.style.left = `${percent * 100}%`;
+
+                        const value = param.min + percent * (param.max - param.min);
+                        if (param.id === 'waveSpeed') waveSpeed = value;
+                        else if (param.id === 'damping') damping = value;
+                        // gain would be applied to actuator force multiplier
+                    }
+
+                    function stopDrag() {
+                        isDragging = false;
+                        thumb.style.cursor = 'grab';
+                        document.removeEventListener('mousemove', handleDrag);
+                        document.removeEventListener('mouseup', stopDrag);
+                    }
+
+                    handleDrag(e);
+                    document.addEventListener('mousemove', handleDrag);
+                    document.addEventListener('mouseup', stopDrag);
+                });
+
+                sliderRow.appendChild(track);
+                container.appendChild(sliderRow);
+            });
+
+            visual.appendChild(container);
+        }
+
+        // VIEW TILE - Fullscreen toggle
+        function createViewTile(visual) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%;';
+
+            const button = document.createElement('div');
+            button.style.cssText = `
+                width: 40px; height: 40px;
+                background: rgba(0, 229, 255, 0.2);
+                border: 2px solid rgba(0, 229, 255, 0.4);
+                border-radius: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+            `;
+            button.textContent = '⛶';
+
+            button.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            button.addEventListener('mouseenter', () => {
+                button.style.background = 'rgba(0, 229, 255, 0.4)';
+                button.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.3)';
+            });
+
+            button.addEventListener('mouseleave', () => {
+                button.style.background = 'rgba(0, 229, 255, 0.2)';
+                button.style.boxShadow = 'none';
+            });
+
+            container.appendChild(button);
+            visual.appendChild(container);
+        }
+
+        // Enable tile dragging
+        function enableTileDragging() {
+            const tileDivs = document.querySelectorAll('.control-tile');
+
+            tileDivs.forEach(tile => {
+                const dragHandle = tile.querySelector('.drag-handle');
+                if (!dragHandle) return;
+
+                dragHandle.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    tile.classList.add('dragging');
+
+                    function handleMouseMove(e) {
+                        const container = document.getElementById('controls-container');
+                        const afterElement = getDragAfterElement(container, e.clientX);
+
+                        if (afterElement == null) {
+                            container.appendChild(tile);
+                        } else if (afterElement !== tile) {
+                            container.insertBefore(tile, afterElement);
+                        }
+                    }
+
+                    function handleMouseUp() {
+                        tile.classList.remove('dragging');
+                        document.removeEventListener('mousemove', handleMouseMove);
+                        document.removeEventListener('mouseup', handleMouseUp);
+                    }
+
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                });
+            });
+        }
+
+        function getDragAfterElement(container, x) {
+            const elements = [...container.querySelectorAll('.control-tile:not(.dragging)')];
+            return elements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = x - box.left - box.width / 2;
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                }
+                return closest;
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        // Enable tile resizing
+        function enableResizing() {
+            const handles = document.querySelectorAll('.resize-handle');
+
+            handles.forEach(handle => {
+                handle.addEventListener('mousedown', (e) => {
+                    const tile = handle.parentElement;
+                    const startX = e.clientX;
+                    const startWidth = parseInt(window.getComputedStyle(tile).width, 10);
+
+                    function doDrag(e) {
+                        const newWidth = startWidth + e.clientX - startX;
+                        if (newWidth >= 80 && newWidth <= 400) {
+                            tile.style.width = newWidth + 'px';
+                        }
+                    }
+
+                    function stopDrag() {
+                        document.removeEventListener('mousemove', doDrag);
+                        document.removeEventListener('mouseup', stopDrag);
+                    }
+
+                    document.addEventListener('mousemove', doDrag);
+                    document.addEventListener('mouseup', stopDrag);
+                });
+            });
+        }
+
         // Handle resize
         function handleResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
+            const controlsHeight = controlsHidden ? 0 : 120;
+            camera.aspect = window.innerWidth / (window.innerHeight - controlsHeight);
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setSize(window.innerWidth, window.innerHeight - controlsHeight);
         }
 
         window.addEventListener('resize', handleResize);
 
         // Initialize and start
         initializeArrays();
+
+        // Create control tiles
+        createTiles();
 
         // Start with clean membrane (no default actuators/collectors)
 
