@@ -161,7 +161,7 @@
             0.01,
             5000
         );
-        camera.position.set(50, 40, 50);
+        camera.position.set(100, 80, 100);
         camera.lookAt(0, 0, 0);
 
         const renderer = new THREE.WebGLRenderer({
@@ -185,7 +185,7 @@
 
         // 3D Membrane
         let gridSize = 100;
-        const membraneSize = 100;
+        const membraneSize = 200;
         let geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
 
         // Custom shader material for Harold's aesthetic
