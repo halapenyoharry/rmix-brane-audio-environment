@@ -1,0 +1,126 @@
+{
+  "tiles": [
+    {
+      "id": "audio",
+      "type": "audio-control",
+      "width": 160,
+      "label": "Audio",
+      "controls": [
+        {
+          "id": "input-mode",
+          "type": "radio-group",
+          "label": "Input Mode",
+          "options": [
+            { "value": "demo", "label": "Demo Mode" },
+            { "value": "file", "label": "Load File" },
+            { "value": "jack", "label": "JACK Input" }
+          ],
+          "default": "demo"
+        },
+        {
+          "id": "output-enabled",
+          "type": "toggle",
+          "label": "Audio Output",
+          "default": false
+        }
+      ]
+    },
+    {
+      "id": "physics",
+      "type": "sliders",
+      "width": 200,
+      "label": "Physics",
+      "controls": [
+        {
+          "id": "waveSpeed",
+          "type": "slider",
+          "label": "Wave Speed",
+          "min": 0.05,
+          "max": 0.3,
+          "default": 0.15,
+          "variable": "waveSpeed"
+        },
+        {
+          "id": "damping",
+          "type": "slider",
+          "label": "Damping",
+          "min": 0.001,
+          "max": 0.05,
+          "default": 0.01,
+          "variable": "damping"
+        },
+        {
+          "id": "gain",
+          "type": "slider",
+          "label": "Actuator Gain",
+          "min": 0.5,
+          "max": 5.0,
+          "default": 3.0,
+          "variable": "actuatorGain"
+        }
+      ]
+    },
+    {
+      "id": "membrane-ops",
+      "type": "button-group",
+      "width": 100,
+      "label": "Membrane",
+      "controls": [
+        {
+          "id": "clear-all",
+          "type": "button",
+          "label": "Clear All",
+          "color": "#ff5555",
+          "action": "clearAll"
+        }
+      ]
+    },
+    {
+      "id": "mini-membrane",
+      "type": "mini-membrane",
+      "width": 150,
+      "height": 150,
+      "label": "Positions",
+      "resizable": true
+    },
+    {
+      "id": "view",
+      "type": "button-group",
+      "width": 100,
+      "label": "View",
+      "controls": [
+        {
+          "id": "fullscreen",
+          "type": "button",
+          "label": "Fullscreen",
+          "icon": "⛶",
+          "action": "toggleFullscreen"
+        }
+      ]
+    }
+  ],
+  "actuatorProperties": {
+    "size": {
+      "min": 1.0,
+      "max": 5.0,
+      "default": 2.0,
+      "label": "Size (Frequency Range)"
+    },
+    "height": {
+      "min": 0.0,
+      "max": 20.0,
+      "default": 2.0,
+      "label": "Height (Responsiveness)"
+    },
+    "transparency": {
+      "min": 0.3,
+      "max": 1.0,
+      "default": 0.7,
+      "label": "Opacity (Band Sensitivity)"
+    }
+  },
+  "membraneGradient": {
+    "range": [-10, 10],
+    "colorScale": "interpolateSpectral"
+  }
+}
