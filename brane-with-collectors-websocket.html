@@ -150,6 +150,25 @@
             justify-content: center;
         }
 
+        .tile-label {
+            position: absolute;
+            bottom: -18px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 9px;
+            color: #00e5ff;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tile-label.visible {
+            opacity: 0.8;
+        }
+
         #loading {
             position: fixed;
             top: 50%;
@@ -1020,19 +1039,24 @@
                 visual.className = 'param-visual';
                 tileDiv.appendChild(visual);
 
+                // Add label area
+                const label = document.createElement('div');
+                label.className = 'tile-label';
+                tileDiv.appendChild(label);
+
                 // Create tile content based on type
                 if (tileConfig.type === 'audio-input') {
-                    createAudioInputTile(visual);
+                    createAudioInputTile(visual, label);
                 } else if (tileConfig.type === 'audio-output') {
-                    createAudioOutputTile(visual);
+                    createAudioOutputTile(visual, label);
                 } else if (tileConfig.type === 'membrane-ops') {
-                    createMembraneOpsTile(visual);
+                    createMembraneOpsTile(visual, label);
                 } else if (tileConfig.type === 'counts') {
-                    createCountsTile(visual);
+                    createCountsTile(visual, label);
                 } else if (tileConfig.type === 'physics') {
-                    createPhysicsTile(visual);
+                    createPhysicsTile(visual, label);
                 } else if (tileConfig.type === 'view') {
-                    createViewTile(visual);
+                    createViewTile(visual, label);
                 }
 
                 container.appendChild(tileDiv);
@@ -1047,11 +1071,12 @@
         // ============================================
 
         // AUDIO INPUT TILE - Three mode toggles (DEMO/FILE/JACK)
-        function createAudioInputTile(visual) {
+        function createAudioInputTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; justify-content: center; align-items: center;';
 
             const modes = ['demo', 'file', 'jack'];
+            const modeLabels = { demo: 'Demo Mode', file: 'Load File', jack: 'JACK Input' };
             const modeToggles = {};
 
             modes.forEach((mode, index) => {
@@ -1114,6 +1139,15 @@
                     updateAudioInputToggles();
                 });
 
+                // Hover label
+                modeRow.addEventListener('mouseenter', () => {
+                    label.textContent = modeLabels[mode];
+                    label.classList.add('visible');
+                });
+                modeRow.addEventListener('mouseleave', () => {
+                    label.classList.remove('visible');
+                });
+
                 modeRow.appendChild(indicator);
                 modeRow.appendChild(toggle);
                 container.appendChild(modeRow);
@@ -1153,7 +1187,7 @@
         }
 
         // AUDIO OUTPUT TILE - Single toggle for output
-        function createAudioOutputTile(visual) {
+        function createAudioOutputTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%;';
 
@@ -1193,6 +1227,15 @@
                 updateAudioOutputToggle();
             });
 
+            // Hover label
+            container.addEventListener('mouseenter', () => {
+                label.textContent = 'Audio Output';
+                label.classList.add('visible');
+            });
+            container.addEventListener('mouseleave', () => {
+                label.classList.remove('visible');
+            });
+
             container.appendChild(indicator);
             container.appendChild(toggle);
             visual.appendChild(container);
@@ -1217,14 +1260,14 @@
         }
 
         // MEMBRANE OPS TILE - Reset and clear buttons
-        function createMembraneOpsTile(visual) {
+        function createMembraneOpsTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; width: 100%; height: 100%;';
 
             const ops = [
-                { id: 'reset', color: '#ff5555', action: resetMembrane },
-                { id: 'clear-act', color: '#ff9955', action: clearActuators },
-                { id: 'clear-col', color: '#ff9955', action: clearCollectors }
+                { id: 'reset', color: '#ff5555', action: resetMembrane, label: 'Reset Membrane' },
+                { id: 'clear-act', color: '#ff9955', action: clearActuators, label: 'Clear Actuators' },
+                { id: 'clear-col', color: '#ff9955', action: clearCollectors, label: 'Clear Collectors' }
             ];
 
             ops.forEach(op => {
@@ -1265,10 +1308,13 @@
 
                 button.addEventListener('mouseenter', () => {
                     button.style.boxShadow = `0 0 10px ${op.color}`;
+                    label.textContent = op.label;
+                    label.classList.add('visible');
                 });
 
                 button.addEventListener('mouseleave', () => {
                     button.style.boxShadow = 'none';
+                    label.classList.remove('visible');
                 });
 
                 container.appendChild(button);
@@ -1278,9 +1324,18 @@
         }
 
         // COUNTS TILE - Actuator and collector counts
-        function createCountsTile(visual) {
+        function createCountsTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: flex; flex-direction: column; gap: 8px; justify-content: center; height: 100%; padding: 8px;';
+
+            // Hover label
+            container.addEventListener('mouseenter', () => {
+                label.textContent = 'Actuator & Collector Counts';
+                label.classList.add('visible');
+            });
+            container.addEventListener('mouseleave', () => {
+                label.classList.remove('visible');
+            });
 
             // Actuator row
             const actRow = document.createElement('div');
@@ -1365,14 +1420,14 @@
         }
 
         // PHYSICS TILE - Three horizontal sliders for physics params
-        function createPhysicsTile(visual) {
+        function createPhysicsTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; padding: 8px; width: 100%; height: 100%; justify-content: center;';
 
             const params = [
-                { id: 'waveSpeed', min: 0.05, max: 0.3, default: waveSpeed },
-                { id: 'damping', min: 0.001, max: 0.05, default: damping },
-                { id: 'gain', min: 0.5, max: 5.0, default: 3.0 }
+                { id: 'waveSpeed', min: 0.05, max: 0.3, default: waveSpeed, label: 'Wave Speed' },
+                { id: 'damping', min: 0.001, max: 0.05, default: damping, label: 'Damping' },
+                { id: 'gain', min: 0.5, max: 5.0, default: 3.0, label: 'Actuator Gain' }
             ];
 
             params.forEach(param => {
@@ -1433,6 +1488,15 @@
                     document.addEventListener('mouseup', stopDrag);
                 });
 
+                // Hover label
+                track.addEventListener('mouseenter', () => {
+                    label.textContent = param.label;
+                    label.classList.add('visible');
+                });
+                track.addEventListener('mouseleave', () => {
+                    label.classList.remove('visible');
+                });
+
                 sliderRow.appendChild(track);
                 container.appendChild(sliderRow);
             });
@@ -1441,7 +1505,7 @@
         }
 
         // VIEW TILE - Fullscreen toggle
-        function createViewTile(visual) {
+        function createViewTile(visual, label) {
             const container = document.createElement('div');
             container.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%;';
 
@@ -1471,11 +1535,14 @@
             button.addEventListener('mouseenter', () => {
                 button.style.background = 'rgba(0, 229, 255, 0.4)';
                 button.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.3)';
+                label.textContent = 'Fullscreen';
+                label.classList.add('visible');
             });
 
             button.addEventListener('mouseleave', () => {
                 button.style.background = 'rgba(0, 229, 255, 0.2)';
                 button.style.boxShadow = 'none';
+                label.classList.remove('visible');
             });
 
             container.appendChild(button);
