@@ -1,122 +1,124 @@
 {
   "tiles": [
     {
-      "id": "audio",
-      "type": "audio-control",
-      "width": 160,
-      "label": "Audio",
-      "controls": [
-        {
-          "id": "input-mode",
-          "type": "radio-group",
-          "label": "Input Mode",
-          "options": [
-            { "value": "demo", "label": "Demo Mode" },
-            { "value": "file", "label": "Load File" },
-            { "value": "jack", "label": "JACK Input" }
-          ],
-          "default": "demo"
-        },
-        {
-          "id": "output-enabled",
-          "type": "toggle",
-          "label": "Audio Output",
-          "default": false
-        }
-      ]
+      "id": "tab-capture",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "captureTab",
+      "color": "#00ffff",
+      "icon": "🎵"
     },
     {
-      "id": "physics",
-      "type": "sliders",
-      "width": 200,
-      "label": "Physics",
-      "controls": [
-        {
-          "id": "waveSpeed",
-          "type": "slider",
-          "label": "Wave Speed",
-          "min": 0.05,
-          "max": 0.3,
-          "default": 0.15,
-          "variable": "waveSpeed"
-        },
-        {
-          "id": "damping",
-          "type": "slider",
-          "label": "Damping",
-          "min": 0.001,
-          "max": 0.05,
-          "default": 0.01,
-          "variable": "damping"
-        },
-        {
-          "id": "gain",
-          "type": "slider",
-          "label": "Actuator Gain",
-          "min": 0.5,
-          "max": 5.0,
-          "default": 3.0,
-          "variable": "actuatorGain"
-        }
-      ]
+      "id": "demo-loops",
+      "type": "button",
+      "width": 60,
+      "height": 60,
+      "action": "playLoop",
+      "color": "#ffff00",
+      "icon": "▶"
     },
     {
-      "id": "membrane-ops",
-      "type": "button-group",
-      "width": 100,
-      "label": "Membrane",
-      "controls": [
-        {
-          "id": "clear-all",
-          "type": "button",
-          "label": "Clear All",
-          "color": "#ff5555",
-          "action": "clearAll"
-        }
-      ]
+      "id": "file-input",
+      "type": "button",
+      "width": 60,
+      "height": 60,
+      "action": "loadFile",
+      "color": "#ff8800",
+      "icon": "📁"
+    },
+    {
+      "id": "jack-input",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "toggleJack",
+      "color": "#ff00ff",
+      "icon": "J"
+    },
+    {
+      "id": "audio-output",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "toggleOutput",
+      "color": "#00ff00",
+      "icon": "→"
+    },
+    {
+      "id": "wave-speed",
+      "type": "slider",
+      "width": 120,
+      "height": 60,
+      "min": 0.05,
+      "max": 0.3,
+      "default": 0.15,
+      "variable": "waveSpeed",
+      "color": "#4444ff"
+    },
+    {
+      "id": "damping",
+      "type": "slider",
+      "width": 120,
+      "height": 60,
+      "min": 0.001,
+      "max": 0.05,
+      "default": 0.01,
+      "variable": "damping",
+      "color": "#ff4444"
+    },
+    {
+      "id": "gain",
+      "type": "slider",
+      "width": 120,
+      "height": 60,
+      "min": 0.5,
+      "max": 5.0,
+      "default": 3.0,
+      "variable": "actuatorGain",
+      "color": "#44ff44"
+    },
+    {
+      "id": "clear-all",
+      "type": "button",
+      "width": 60,
+      "height": 60,
+      "action": "clearAll",
+      "color": "#ff5555",
+      "icon": "×"
+    },
+    {
+      "id": "fullscreen",
+      "type": "button",
+      "width": 60,
+      "height": 60,
+      "action": "toggleFullscreen",
+      "color": "#ffffff",
+      "icon": "⛶"
     },
     {
       "id": "mini-membrane",
       "type": "mini-membrane",
-      "width": 150,
-      "height": 150,
-      "label": "Positions",
+      "width": 120,
+      "height": 120,
       "resizable": true
-    },
-    {
-      "id": "view",
-      "type": "button-group",
-      "width": 100,
-      "label": "View",
-      "controls": [
-        {
-          "id": "fullscreen",
-          "type": "button",
-          "label": "Fullscreen",
-          "icon": "⛶",
-          "action": "toggleFullscreen"
-        }
-      ]
     }
   ],
   "actuatorProperties": {
     "size": {
       "min": 1.0,
       "max": 5.0,
-      "default": 2.0,
-      "label": "Size (Frequency Range)"
+      "default": 2.0
     },
     "height": {
       "min": 0.0,
       "max": 20.0,
-      "default": 2.0,
-      "label": "Height (Responsiveness)"
+      "default": 2.0
     },
     "transparency": {
       "min": 0.3,
       "max": 1.0,
-      "default": 0.7,
-      "label": "Opacity (Band Sensitivity)"
+      "default": 0.7
     }
   },
   "membraneGradient": {

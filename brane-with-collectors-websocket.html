@@ -47,16 +47,14 @@
 
         .control-tile {
             position: absolute;
-            height: 80px;
             background: rgba(10, 14, 39, 0.6);
             border: 1px solid rgba(0, 229, 255, 0.3);
             border-radius: 8px;
-            padding: 12px;
+            padding: 8px;
             transition: border-color 0.2s ease, background 0.2s ease;
             display: flex;
             align-items: center;
             justify-content: center;
-            min-width: 100px;
             user-select: none;
             -webkit-user-select: none;
             pointer-events: auto;
@@ -263,11 +261,25 @@
         // Audio file playback
         let audioElement = null;
         let audioFileMode = false;
+        let audioElementSource = null; // Track if we've created source
+
+        // Tab audio capture
+        let tabAudioActive = false;
+
+        // Demo loops
+        let loopAudioElement = null;
+        let loopAudioSource = null; // Track if we've created source
+        let currentLoopIndex = 0;
+        const demoLoops = ['bass.wav', 'drums.wav', 'kick.wav'];
 
         // Audio output for collectors
         let outputContext = null;
         let outputProcessor = null;
         let audioOutputEnabled = false;
+
+        // Waveform visualizer state
+        let visualizerAnalyser = null;
+        let visualizerAnimationId = null;
 
         // Actuator class
         class Actuator {
@@ -400,7 +412,7 @@
                 if (act.visual) scene.remove(act.visual);
             });
             actuators = [];
-            updateCounts();
+            updateMiniMembrane();
         }
 
         function clearCollectors() {
@@ -408,7 +420,7 @@
                 if (col.visual) scene.remove(col.visual);
             });
             collectors = [];
-            updateCounts();
+            updateMiniMembrane();
         }
 
         // Audio control wrappers for tiles
@@ -417,7 +429,7 @@
             if (success) {
                 audioEnabled = true;
                 demoMode = false;
-                updateAudioInputToggles();
+                updateAudioToggles();
             }
         }
 
@@ -432,7 +444,7 @@
             } else {
                 stopAudioOutput();
             }
-            updateAudioOutputToggle();
+            updateAudioToggles();
         }
 
         // Add actuator
@@ -445,8 +457,6 @@
                 new THREE.SphereGeometry(2, 16, 16),
                 new THREE.MeshBasicMaterial({
                     color: color,
-                    emissive: color,
-                    emissiveIntensity: 0.5,
                     transparent: true,
                     opacity: 0.7
                 })
@@ -455,7 +465,7 @@
             scene.add(indicator);
             actuator.visual = indicator;
 
-            updateCounts();
+            updateMiniMembrane();
             return actuator;
         }
 
@@ -479,7 +489,7 @@
             scene.add(indicator);
             collector.visual = indicator;
 
-            updateCounts();
+            updateMiniMembrane();
             console.log(`Added collector at (${x.toFixed(1)}, ${y.toFixed(1)}) - ${config.channel || 'mono'} - ${config.mode || 'velocity'}`);
             return collector;
         }
@@ -501,42 +511,51 @@
                 if (!audioElement) {
                     audioElement = new Audio();
                     audioElement.loop = true;
-                    audioElement.controls = false; // Hidden for now, can add UI later
+                    audioElement.controls = false;
                 }
 
-                // Create audio context and analyser
+                // Create audio context
                 if (!audioContext) {
                     audioContext = new AudioContext();
                 }
 
-                if (!audioAnalyser) {
-                    audioAnalyser = audioContext.createAnalyser();
-                    audioAnalyser.fftSize = 256;
-                    audioAnalyser.smoothingTimeConstant = 0.8;
-                    audioDataArray = new Uint8Array(audioAnalyser.frequencyBinCount);
+                // Create stereo analysers if needed
+                if (!leftAnalyser) {
+                    leftAnalyser = audioContext.createAnalyser();
+                    leftAnalyser.fftSize = 256;
+                    leftAnalyser.smoothingTimeConstant = 0.3;
+
+                    rightAnalyser = audioContext.createAnalyser();
+                    rightAnalyser.fftSize = 256;
+                    rightAnalyser.smoothingTimeConstant = 0.3;
+
+                    leftAudioData = new Uint8Array(leftAnalyser.fftSize);
+                    rightAudioData = new Uint8Array(rightAnalyser.fftSize);
                 }
 
-                // Load file
+                // Only create source once per element
+                if (!audioElementSource) {
+                    audioElementSource = audioContext.createMediaElementSource(audioElement);
+
+                    // Create stereo splitter
+                    const splitter = audioContext.createChannelSplitter(2);
+                    audioElementSource.connect(splitter);
+                    audioElementSource.connect(audioContext.destination);
+
+                    splitter.connect(leftAnalyser, 0);
+                    splitter.connect(rightAnalyser, 1);
+                }
+
+                // Load new file
                 const url = URL.createObjectURL(file);
                 audioElement.src = url;
-
-                // Connect to analyser
-                const source = audioContext.createMediaElementSource(audioElement);
-                source.connect(audioAnalyser);
-                source.connect(audioContext.destination); // Hear it too
-
-                // Start playback
                 audioElement.play();
 
                 audioFileMode = true;
                 audioEnabled = true;
                 demoMode = false;
 
-                document.getElementById('audio-indicator').textContent = 'FILE';
-                document.getElementById('audio-indicator').style.color = '#00ff00';
-                document.getElementById('mode-display').textContent = 'FILE: ' + file.name.substring(0, 15);
-
-                console.log('Audio file loaded and playing');
+                console.log('Audio file loaded and playing:', file.name);
             };
 
             input.click();
@@ -547,15 +566,12 @@
             try {
                 console.log('Requesting JACK audio access...');
 
-                // Check if JACK bridge is available
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                const jackDevice = devices.find(d => d.deviceId === 'jack-system-capture');
-
-                if (!jackDevice) {
-                    throw new Error('JACK Bridge extension not installed or running');
+                // Check if mediaDevices API is available
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Web Audio API not available. Try:\n- Using HTTPS (not http://)\n- Chrome/Chromium instead of Firefox\n- Checking browser security settings');
                 }
 
-                // Request JACK audio stream
+                // Try to get JACK audio directly (bridge should provide it)
                 audioStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         deviceId: 'jack-system-capture',
@@ -598,11 +614,212 @@
             }
         }
 
+        // Tab audio capture
+        async function captureTabAudio() {
+            try {
+                console.log('Requesting tab audio capture...');
+
+                // Check browser support
+                if (!navigator.mediaDevices) {
+                    throw new Error('MediaDevices API not available. Try:\n- Accessing via localhost (not remote host)\n- Using HTTPS instead of HTTP');
+                }
+                if (!navigator.mediaDevices.getDisplayMedia) {
+                    throw new Error('getDisplayMedia not available. This usually means:\n- You need to access via localhost (Chrome blocks this on remote HTTP)\n- OR set up HTTPS for remote access');
+                }
+
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                        channelCount: 2
+                    },
+                    video: false
+                });
+
+                // Create audio context if needed
+                if (!audioContext) {
+                    audioContext = new AudioContext();
+                }
+
+                const source = audioContext.createMediaStreamSource(stream);
+
+                // Create channel splitter for stereo
+                const splitter = audioContext.createChannelSplitter(2);
+                source.connect(splitter);
+
+                // Create separate analysers for left and right
+                leftAnalyser = audioContext.createAnalyser();
+                leftAnalyser.fftSize = 256;
+                leftAnalyser.smoothingTimeConstant = 0.3;
+
+                rightAnalyser = audioContext.createAnalyser();
+                rightAnalyser.fftSize = 256;
+                rightAnalyser.smoothingTimeConstant = 0.3;
+
+                splitter.connect(leftAnalyser, 0);
+                splitter.connect(rightAnalyser, 1);
+
+                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
+                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+
+                audioStream = stream;
+                tabAudioActive = true;
+                audioEnabled = true;
+                demoMode = false;
+                audioFileMode = false;
+
+                console.log('Tab audio captured! Use any browser tab audio.');
+
+            } catch (error) {
+                console.error('Tab capture failed:', error);
+                alert('Tab audio capture failed: ' + error.message + '\n\nNote: This works in Chrome/Edge, not Safari.');
+            }
+        }
+
+        function stopTabAudio() {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
+            }
+            tabAudioActive = false;
+            audioEnabled = false;
+            console.log('Tab audio stopped');
+        }
+
+        // Play demo loops - toggle behavior
+        function playLoop() {
+            // If already playing, stop
+            if (loopAudioElement && !loopAudioElement.paused) {
+                loopAudioElement.pause();
+                loopAudioElement.currentTime = 0;
+                audioEnabled = false;
+                audioFileMode = false;
+                console.log('Loop stopped');
+                return;
+            }
+
+            // If paused, resume
+            if (loopAudioElement && loopAudioElement.paused) {
+                loopAudioElement.play();
+                audioEnabled = true;
+                audioFileMode = true;
+                console.log('Loop resumed');
+                return;
+            }
+
+            // Start new loop
+            const loopFile = demoLoops[currentLoopIndex];
+            currentLoopIndex = (currentLoopIndex + 1) % demoLoops.length;
+
+            console.log('Loading demo loop:', loopFile);
+
+            // Create audio element if needed
+            if (!loopAudioElement) {
+                loopAudioElement = new Audio();
+                loopAudioElement.loop = true;
+            }
+
+            // Create audio context if needed
+            if (!audioContext) {
+                audioContext = new AudioContext();
+            }
+
+            // Only create analysers once
+            if (!leftAnalyser) {
+                leftAnalyser = audioContext.createAnalyser();
+                leftAnalyser.fftSize = 256;
+                leftAnalyser.smoothingTimeConstant = 0.3;
+
+                rightAnalyser = audioContext.createAnalyser();
+                rightAnalyser.fftSize = 256;
+                rightAnalyser.smoothingTimeConstant = 0.3;
+
+                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
+                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+            }
+
+            // Only create source once per loop element
+            if (!loopAudioSource) {
+                loopAudioSource = audioContext.createMediaElementSource(loopAudioElement);
+
+                // Create channel splitter for stereo
+                const splitter = audioContext.createChannelSplitter(2);
+                loopAudioSource.connect(splitter);
+                loopAudioSource.connect(audioContext.destination);
+
+                splitter.connect(leftAnalyser, 0);
+                splitter.connect(rightAnalyser, 1);
+            }
+
+            // Load new loop file
+            loopAudioElement.src = 'demo-loops/' + loopFile;
+            loopAudioElement.play();
+
+            audioEnabled = true;
+            demoMode = false;
+            audioFileMode = true;
+
+            console.log('Playing loop:', loopFile);
+        }
+
         // Update audio data from stereo channels
         function updateAudioData() {
             if (audioEnabled && leftAnalyser && rightAnalyser && leftAudioData && rightAudioData) {
                 leftAnalyser.getByteTimeDomainData(leftAudioData);
                 rightAnalyser.getByteTimeDomainData(rightAudioData);
+            }
+        }
+
+        // Compact spectrum visualizer for audio tiles
+        function drawTileSpectrum(canvas, analyser, color) {
+            if (!canvas || !analyser) return;
+
+            const ctx = canvas.getContext('2d');
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Clear canvas
+            ctx.fillStyle = '#0a0e27';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw compact spectrum bars
+            const barWidth = canvas.width / bufferLength * 2.5;
+            let x = 0;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = (dataArray[i] / 255) * canvas.height * 0.9;
+                const intensity = dataArray[i] / 255;
+                const alpha = Math.max(0.4, intensity);
+
+                // Parse hex color
+                const r = parseInt(color.slice(1, 3), 16);
+                const g = parseInt(color.slice(3, 5), 16);
+                const b = parseInt(color.slice(5, 7), 16);
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+                ctx.fillRect(x, canvas.height - barHeight, barWidth - 0.5, barHeight);
+                x += barWidth;
+            }
+        }
+
+        // Start visualizer for active audio tile
+        function startTileVisualizer(canvas, analyser, color) {
+            if (!canvas || !analyser) return;
+
+            function animate() {
+                drawTileSpectrum(canvas, analyser, color);
+                visualizerAnimationId = requestAnimationFrame(animate);
+            }
+            animate();
+        }
+
+        // Stop visualizer
+        function stopTileVisualizer() {
+            if (visualizerAnimationId) {
+                cancelAnimationFrame(visualizerAnimationId);
+                visualizerAnimationId = null;
             }
         }
 
@@ -615,8 +832,6 @@
                 websocket.onopen = () => {
                     console.log('WebSocket connected!');
                     outputEnabled = true;
-                    document.getElementById('output-indicator').textContent = 'WEBSOCKET';
-                    document.getElementById('output-indicator').style.color = '#00ff00';
                 };
 
                 websocket.onerror = (error) => {
@@ -627,8 +842,6 @@
                 websocket.onclose = () => {
                     console.log('WebSocket disconnected');
                     outputEnabled = false;
-                    document.getElementById('output-indicator').textContent = 'OFF';
-                    document.getElementById('output-indicator').style.color = '#ff0000';
                 };
 
             } catch (error) {
@@ -643,8 +856,6 @@
                 websocket = null;
             }
             outputEnabled = false;
-            document.getElementById('output-indicator').textContent = 'OFF';
-            document.getElementById('output-indicator').style.color = '#ff0000';
         }
 
         // Initialize audio output for collectors
@@ -701,9 +912,6 @@
             outputProcessor.connect(outputContext.destination);
 
             audioOutputEnabled = true;
-            document.getElementById('output-indicator').textContent = 'AUDIO';
-            document.getElementById('output-indicator').style.color = '#00ff00';
-
             console.log('Audio output enabled - routing to Firefox JACK output');
         }
 
@@ -717,8 +925,6 @@
                 outputContext = null;
             }
             audioOutputEnabled = false;
-            document.getElementById('output-indicator').textContent = 'OFF';
-            document.getElementById('output-indicator').style.color = '#ff0000';
             console.log('Audio output stopped');
         }
 
@@ -800,7 +1006,7 @@
                     if (intersects.length > 0) {
                         scene.remove(actuators[i].visual);
                         actuators.splice(i, 1);
-                        updateCounts();
+                        updateMiniMembrane();
                         clickedSphere = true;
                         break;
                     }
@@ -815,7 +1021,7 @@
                         if (intersects.length > 0) {
                             scene.remove(collectors[i].visual);
                             collectors.splice(i, 1);
-                            updateCounts();
+                            updateMiniMembrane();
                             clickedSphere = true;
                             break;
                         }
@@ -861,7 +1067,7 @@
                     if (success) {
                         audioEnabled = true;
                         demoMode = false;
-                        updateAudioInputToggles();
+                        updateAudioToggles();
                     }
                 } else {
                     audioEnabled = false;
@@ -871,7 +1077,7 @@
                     if (audioContext) {
                         audioContext.close();
                     }
-                    updateAudioInputToggles();
+                    updateAudioToggles();
                 }
             } else if (e.key === 'f' || e.key === 'F') {
                 // Toggle fullscreen
@@ -894,7 +1100,7 @@
                         audioElement.pause();
                     }
                 }
-                updateAudioInputToggles();
+                updateAudioToggles();
             } else if (e.key === 'o' || e.key === 'O') {
                 // Toggle audio output
                 if (!audioOutputEnabled) {
@@ -911,12 +1117,54 @@
             }
         });
 
+        // Update all audio visualizers
+        function updateAudioVisualizers() {
+            document.querySelectorAll('.control-tile').forEach(tile => {
+                const visual = tile.querySelector('.param-visual');
+                if (!visual || !visual.button || !visual.button.waveformCanvas) return;
+
+                const canvas = visual.button.waveformCanvas;
+                const tileData = visual.tileData;
+                if (!tileData) return;
+
+                // Check if this tile should show waveform
+                let shouldShow = false;
+                let analyser = null;
+
+                if (tileData.action === 'captureTab' && tabAudioActive && leftAnalyser) {
+                    shouldShow = true;
+                    analyser = leftAnalyser;
+                } else if (tileData.action === 'toggleJack' && audioEnabled && !tabAudioActive && !audioFileMode && !demoMode && leftAnalyser) {
+                    // Only show on JACK button if JACK is the actual source (not file/loop/demo)
+                    shouldShow = true;
+                    analyser = leftAnalyser;
+                } else if (tileData.action === 'playLoop' && loopAudioElement && !loopAudioElement.paused && leftAnalyser) {
+                    shouldShow = true;
+                    analyser = leftAnalyser;
+                } else if (tileData.action === 'loadFile' && audioFileMode && audioElement && !audioElement.paused && leftAnalyser) {
+                    shouldShow = true;
+                    analyser = leftAnalyser;
+                }
+
+                // Show/hide and update canvas
+                if (shouldShow && analyser) {
+                    canvas.style.display = 'block';
+                    drawTileSpectrum(canvas, analyser, tileData.color);
+                } else {
+                    canvas.style.display = 'none';
+                }
+            });
+        }
+
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
 
             // Update audio data from JACK
             updateAudioData();
+
+            // Update audio visualizers on tiles
+            updateAudioVisualizers();
 
             // Apply actuators
             actuators.forEach(actuator => {
@@ -969,7 +1217,8 @@
                         const tile = enter.append('div')
                             .attr('class', 'control-tile')
                             .attr('id', d => `tile-${d.id}`)
-                            .style('width', d => `${d.width || 100}px`)
+                            .style('width', d => `${d.width || 60}px`)
+                            .style('height', d => `${d.height || 60}px`)
                             .style('left', d => `${tilePositions[d.id].x}px`)
                             .style('top', d => `${tilePositions[d.id].y}px`)
                             .call(createD3Drag());
@@ -997,23 +1246,27 @@
 
         // D3 Drag handler with hard boundaries
         function createD3Drag() {
+            let startX, startY;
+
             return d3.drag()
                 .on('start', function(event, d) {
                     d3.select(this).classed('dragging', true);
+                    const tile = d3.select(this);
+                    startX = parseInt(tile.style('left')) - event.x;
+                    startY = parseInt(tile.style('top')) - event.y;
                 })
                 .on('drag', function(event, d) {
                     const tile = d3.select(this);
                     const width = parseInt(tile.style('width'));
-                    const height = 80; // Fixed tile height
+                    const height = d.height || 60;
 
-                    // Hard boundaries
-                    const x = Math.max(0, Math.min(window.innerWidth - width, event.x));
-                    const y = Math.max(0, Math.min(window.innerHeight - height, event.y));
+                    // Calculate new position relative to drag start
+                    const x = Math.max(0, Math.min(window.innerWidth - width, event.x + startX));
+                    const y = Math.max(0, Math.min(window.innerHeight - height, event.y + startY));
 
                     tile.style('left', `${x}px`)
                         .style('top', `${y}px`);
 
-                    // Update position tracker
                     tilePositions[d.id] = { x, y };
                 })
                 .on('end', function(event, d) {
@@ -1023,503 +1276,348 @@
 
         // Route to appropriate tile creator based on type
         function createTileContent(tileData, visual, label) {
-            if (tileData.type === 'audio-control') {
-                createAudioTile(visual, label, tileData);
-            } else if (tileData.type === 'sliders') {
-                createPhysicsTile(visual, label, tileData);
-            } else if (tileData.type === 'button-group') {
-                if (tileData.id === 'membrane-ops') {
-                    createMembraneOpsTile(visual, label, tileData);
-                } else if (tileData.id === 'view') {
-                    createViewTile(visual, label, tileData);
-                }
+            if (tileData.type === 'toggle') {
+                createToggleTile(visual, tileData);
+            } else if (tileData.type === 'button') {
+                createButtonTile(visual, tileData);
+            } else if (tileData.type === 'slider') {
+                createSliderTile(visual, tileData);
             } else if (tileData.type === 'mini-membrane') {
-                createMiniMembraneTile(visual, label, tileData);
+                createMiniMembraneTile(visual, tileData);
             }
         }
 
-        // ============================================
-        // INDIVIDUAL TILE CREATORS
-        // ============================================
+        // ATOMIC TILE CREATORS - One control per tile, no labels
 
-        // AUDIO INPUT TILE - Three mode toggles (DEMO/FILE/JACK)
-        function createAudioInputTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; justify-content: center; align-items: center;';
-
-            const modes = ['demo', 'file', 'jack'];
-            const modeLabels = { demo: 'Demo Mode', file: 'Load File', jack: 'JACK Input' };
-            const modeToggles = {};
-
-            modes.forEach((mode, index) => {
-                const modeRow = document.createElement('div');
-                modeRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
-
-                const indicator = document.createElement('div');
-                indicator.style.cssText = `
-                    width: 12px; height: 12px;
-                    background: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '#00ff00' : 'rgba(0, 229, 255, 0.2)'};
-                    border-radius: 50%;
-                    transition: background 0.2s;
-                    box-shadow: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '0 0 8px #00ff00' : 'none'};
-                `;
-                modeToggles[mode] = indicator;
-
-                const toggle = document.createElement('div');
-                toggle.style.cssText = `
-                    width: 36px; height: 16px;
-                    background: rgba(0, 229, 255, ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '0.4' : '0.2'});
-                    border-radius: 8px;
-                    position: relative;
-                    cursor: pointer;
-                    transition: background 0.2s;
-                `;
-
-                const knob = document.createElement('div');
-                knob.style.cssText = `
-                    position: absolute;
-                    width: 12px; height: 12px;
-                    background: #00e5ff;
-                    border-radius: 50%;
-                    top: 2px;
-                    left: ${demoMode && mode === 'demo' || audioEnabled && mode === 'jack' ? '22px' : '2px'};
-                    transition: left 0.2s;
-                `;
-                toggle.appendChild(knob);
-
-                toggle.addEventListener('click', () => {
-                    if (mode === 'demo') {
-                        // Toggle demo mode
-                        demoMode = !demoMode;
-                        if (demoMode) {
-                            audioEnabled = false;
-                        }
-                    } else if (mode === 'file') {
-                        // Trigger file load
-                        loadAudioFile();
-                    } else if (mode === 'jack') {
-                        // Toggle JACK connection
-                        if (!audioEnabled) {
-                            connectJACK();
-                        } else {
-                            audioEnabled = false;
-                            demoMode = false;
-                        }
-                    }
-
-                    // Update all toggles
-                    updateAudioInputToggles();
-                });
-
-                // Hover label
-                modeRow.addEventListener('mouseenter', () => {
-                    label.textContent = modeLabels[mode];
-                    label.classList.add('visible');
-                });
-                modeRow.addEventListener('mouseleave', () => {
-                    label.classList.remove('visible');
-                });
-
-                modeRow.appendChild(indicator);
-                modeRow.appendChild(toggle);
-                container.appendChild(modeRow);
-            });
-
-            visual.appendChild(container);
-
-            // Store reference for updates
-            visual.modeToggles = modeToggles;
-        }
-
-        function updateAudioInputToggles() {
-            const tile = document.getElementById('tile-audio-input');
-            if (!tile) return;
-
-            const visual = tile.querySelector('.param-visual');
-            if (!visual || !visual.modeToggles) return;
-
-            const modes = {
-                demo: demoMode,
-                file: false, // momentary
-                jack: audioEnabled && !demoMode
-            };
-
-            Object.keys(modes).forEach(mode => {
-                const indicator = visual.modeToggles[mode];
-                const isActive = modes[mode];
-
-                indicator.style.background = isActive ? '#00ff00' : 'rgba(0, 229, 255, 0.2)';
-                indicator.style.boxShadow = isActive ? '0 0 8px #00ff00' : 'none';
-
-                const toggle = indicator.parentElement.querySelector('div:last-child');
-                const knob = toggle.querySelector('div');
-                toggle.style.background = `rgba(0, 229, 255, ${isActive ? '0.4' : '0.2'})`;
-                knob.style.left = isActive ? '22px' : '2px';
-            });
-        }
-
-        // AUDIO OUTPUT TILE - Single toggle for output
-        function createAudioOutputTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%;';
-
-            const indicator = document.createElement('div');
-            indicator.style.cssText = `
-                width: 16px; height: 16px;
-                background: ${outputEnabled ? '#00ff00' : 'rgba(0, 229, 255, 0.2)'};
-                border-radius: 50%;
-                transition: background 0.2s;
-                box-shadow: ${outputEnabled ? '0 0 10px #00ff00' : 'none'};
-            `;
-
-            const toggle = document.createElement('div');
-            toggle.style.cssText = `
-                width: 48px; height: 24px;
-                background: rgba(0, 229, 255, ${outputEnabled ? '0.4' : '0.2'});
-                border-radius: 12px;
-                position: relative;
-                cursor: pointer;
-                transition: background 0.2s;
-            `;
-
-            const knob = document.createElement('div');
-            knob.style.cssText = `
-                position: absolute;
-                width: 20px; height: 20px;
-                background: #00e5ff;
-                border-radius: 50%;
-                top: 2px;
-                left: ${outputEnabled ? '26px' : '2px'};
-                transition: left 0.2s;
-            `;
-            toggle.appendChild(knob);
-
-            toggle.addEventListener('click', () => {
-                toggleAudioOutput();
-                updateAudioOutputToggle();
-            });
-
-            // Hover label
-            container.addEventListener('mouseenter', () => {
-                label.textContent = 'Audio Output';
-                label.classList.add('visible');
-            });
-            container.addEventListener('mouseleave', () => {
-                label.classList.remove('visible');
-            });
-
-            container.appendChild(indicator);
-            container.appendChild(toggle);
-            visual.appendChild(container);
-
-            // Store reference
-            visual.indicator = indicator;
-            visual.toggle = toggle;
-            visual.knob = knob;
-        }
-
-        function updateAudioOutputToggle() {
-            const tile = document.getElementById('tile-audio-output');
-            if (!tile) return;
-
-            const visual = tile.querySelector('.param-visual');
-            if (!visual || !visual.indicator) return;
-
-            visual.indicator.style.background = outputEnabled ? '#00ff00' : 'rgba(0, 229, 255, 0.2)';
-            visual.indicator.style.boxShadow = outputEnabled ? '0 0 10px #00ff00' : 'none';
-            visual.toggle.style.background = `rgba(0, 229, 255, ${outputEnabled ? '0.4' : '0.2'})`;
-            visual.knob.style.left = outputEnabled ? '26px' : '2px';
-        }
-
-        // MEMBRANE OPS TILE - Reset and clear buttons
-        function createMembraneOpsTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px; width: 100%; height: 100%;';
-
-            const ops = [
-                { id: 'reset', color: '#ff5555', action: resetMembrane, label: 'Reset Membrane' },
-                { id: 'clear-act', color: '#ff9955', action: clearActuators, label: 'Clear Actuators' },
-                { id: 'clear-col', color: '#ff9955', action: clearCollectors, label: 'Clear Collectors' }
-            ];
-
-            ops.forEach(op => {
-                const button = document.createElement('div');
-                button.style.cssText = `
-                    width: 100%; height: 100%;
-                    background: rgba(${parseInt(op.color.substring(1,3), 16)}, ${parseInt(op.color.substring(3,5), 16)}, ${parseInt(op.color.substring(5,7), 16)}, 0.2);
-                    border: 1px solid ${op.color};
-                    border-radius: 50%;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                `;
-
-                const dot = document.createElement('div');
-                dot.style.cssText = `
-                    width: 50%; height: 50%;
-                    background: ${op.color};
-                    border-radius: 50%;
-                    transition: transform 0.1s;
-                `;
-                button.appendChild(dot);
-
-                button.addEventListener('mousedown', () => {
-                    dot.style.transform = 'scale(0.8)';
-                });
-
-                button.addEventListener('mouseup', () => {
-                    dot.style.transform = 'scale(1)';
-                    op.action();
-                });
-
-                button.addEventListener('mouseleave', () => {
-                    dot.style.transform = 'scale(1)';
-                });
-
-                button.addEventListener('mouseenter', () => {
-                    button.style.boxShadow = `0 0 10px ${op.color}`;
-                    label.textContent = op.label;
-                    label.classList.add('visible');
-                });
-
-                button.addEventListener('mouseleave', () => {
-                    button.style.boxShadow = 'none';
-                    label.classList.remove('visible');
-                });
-
-                container.appendChild(button);
-            });
-
-            visual.appendChild(container);
-        }
-
-        // COUNTS TILE - Actuator and collector counts
-        function createCountsTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: flex; flex-direction: column; gap: 8px; justify-content: center; height: 100%; padding: 8px;';
-
-            // Hover label
-            container.addEventListener('mouseenter', () => {
-                label.textContent = 'Actuator & Collector Counts';
-                label.classList.add('visible');
-            });
-            container.addEventListener('mouseleave', () => {
-                label.classList.remove('visible');
-            });
-
-            // Actuator row
-            const actRow = document.createElement('div');
-            actRow.style.cssText = 'display: flex; gap: 4px; align-items: center; justify-content: space-around;';
-
-            const actColors = ['#ff00ff', '#00ffff', '#ffff00'];
-            actColors.forEach((color, i) => {
-                const circle = document.createElement('div');
-                circle.style.cssText = `
-                    width: 14px; height: 14px;
-                    background: ${color};
-                    border-radius: 50%;
-                    position: relative;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 8px;
-                    font-weight: bold;
-                    color: #000;
-                `;
-                const count = document.createElement('span');
-                count.textContent = '0';
-                count.style.cssText = 'font-size: 7px; font-weight: bold;';
-                circle.appendChild(count);
-                circle.countSpan = count;
-                actRow.appendChild(circle);
-
-                if (i === 0) visual.leftCount = count;
-                if (i === 1) visual.rightCount = count;
-                if (i === 2) visual.monoCount = count;
-            });
-
-            // Collector row
-            const colRow = document.createElement('div');
-            colRow.style.cssText = 'display: flex; gap: 4px; align-items: center; justify-content: center;';
-
-            const colCircle = document.createElement('div');
-            colCircle.style.cssText = `
-                width: 14px; height: 14px;
-                background: #00ff00;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 8px;
-                font-weight: bold;
-                color: #000;
-            `;
-            const colCount = document.createElement('span');
-            colCount.textContent = '0';
-            colCount.style.cssText = 'font-size: 7px; font-weight: bold;';
-            colCircle.appendChild(colCount);
-            visual.collectorCount = colCount;
-            colRow.appendChild(colCircle);
-
-            container.appendChild(actRow);
-            container.appendChild(colRow);
-            visual.appendChild(container);
-        }
-
-        function updateCounts() {
-            const tile = document.getElementById('tile-counts');
-            if (!tile) return;
-
-            const visual = tile.querySelector('.param-visual');
-            if (!visual) return;
-
-            let leftCnt = 0, rightCnt = 0, monoCnt = 0, collCnt = 0;
-
-            actuators.forEach(act => {
-                if (act.channel === 'left') leftCnt++;
-                else if (act.channel === 'right') rightCnt++;
-                else if (act.channel === 'mono') monoCnt++;
-            });
-
-            collCnt = collectors.length;
-
-            if (visual.leftCount) visual.leftCount.textContent = leftCnt;
-            if (visual.rightCount) visual.rightCount.textContent = rightCnt;
-            if (visual.monoCount) visual.monoCount.textContent = monoCnt;
-            if (visual.collectorCount) visual.collectorCount.textContent = collCnt;
-        }
-
-        // PHYSICS TILE - Three horizontal sliders for physics params
-        function createPhysicsTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: flex; flex-direction: column; gap: 6px; padding: 8px; width: 100%; height: 100%; justify-content: center;';
-
-            const params = [
-                { id: 'waveSpeed', min: 0.05, max: 0.3, default: waveSpeed, label: 'Wave Speed' },
-                { id: 'damping', min: 0.001, max: 0.05, default: damping, label: 'Damping' },
-                { id: 'gain', min: 0.5, max: 5.0, default: 3.0, label: 'Actuator Gain' }
-            ];
-
-            params.forEach(param => {
-                const sliderRow = document.createElement('div');
-                sliderRow.style.cssText = 'display: flex; align-items: center; width: 100%;';
-
-                const track = document.createElement('div');
-                track.style.cssText = `
-                    flex: 1;
-                    height: 3px;
-                    background: rgba(0, 229, 255, 0.3);
-                    border-radius: 2px;
-                    position: relative;
-                    cursor: pointer;
-                `;
-
-                const thumb = document.createElement('div');
-                const initialPercent = (param.default - param.min) / (param.max - param.min);
-                thumb.style.cssText = `
-                    position: absolute;
-                    width: 10px; height: 10px;
-                    background: #00e5ff;
-                    border-radius: 50%;
-                    left: ${initialPercent * 100}%;
-                    top: 50%;
-                    transform: translate(-50%, -50%);
-                    cursor: pointer;
-                `;
-                track.appendChild(thumb);
-
-                let isDragging = false;
-
-                thumb.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    isDragging = true;
-
-                    const rect = track.getBoundingClientRect();
-
-                    function handleDrag(e) {
-                        if (!isDragging) return;
-                        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                        thumb.style.left = `${percent * 100}%`;
-
-                        const value = param.min + percent * (param.max - param.min);
-                        if (param.id === 'waveSpeed') waveSpeed = value;
-                        else if (param.id === 'damping') damping = value;
-                        // gain would be applied to actuator force multiplier
-                    }
-
-                    function stopDrag() {
-                        isDragging = false;
-                        document.removeEventListener('mousemove', handleDrag);
-                        document.removeEventListener('mouseup', stopDrag);
-                    }
-
-                    handleDrag(e);
-                    document.addEventListener('mousemove', handleDrag);
-                    document.addEventListener('mouseup', stopDrag);
-                });
-
-                // Hover label
-                track.addEventListener('mouseenter', () => {
-                    label.textContent = param.label;
-                    label.classList.add('visible');
-                });
-                track.addEventListener('mouseleave', () => {
-                    label.classList.remove('visible');
-                });
-
-                sliderRow.appendChild(track);
-                container.appendChild(sliderRow);
-            });
-
-            visual.appendChild(container);
-        }
-
-        // VIEW TILE - Fullscreen toggle
-        function createViewTile(visual, label) {
-            const container = document.createElement('div');
-            container.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%;';
-
+        // Toggle tile - circular button with icon, glows when active
+        function createToggleTile(visual, tileData) {
             const button = document.createElement('div');
             button.style.cssText = `
-                width: 40px; height: 40px;
-                background: rgba(0, 229, 255, 0.2);
-                border: 2px solid rgba(0, 229, 255, 0.4);
-                border-radius: 8px;
+                width: 100%; height: 100%;
+                background: rgba(${hexToRgb(tileData.color)}, 0.2);
+                border: 2px solid ${tileData.color};
+                border-radius: 50%;
                 cursor: pointer;
                 transition: all 0.2s;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 20px;
+                font-size: 24px;
+                color: ${tileData.color};
+                font-weight: bold;
+                position: relative;
             `;
-            button.textContent = '⛶';
+            button.textContent = tileData.icon;
+
+            // Add waveform canvas (hidden by default)
+            const canvas = document.createElement('canvas');
+            canvas.width = 48;
+            canvas.height = 20;
+            canvas.style.cssText = `
+                position: absolute;
+                bottom: 2px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 48px;
+                height: 20px;
+                border-radius: 3px;
+                display: none;
+                pointer-events: none;
+            `;
+            button.appendChild(canvas);
+            button.waveformCanvas = canvas;
 
             button.addEventListener('click', () => {
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen();
-                } else {
-                    document.exitFullscreen();
+                if (tileData.action === 'captureTab') {
+                    if (!tabAudioActive) {
+                        captureTabAudio();
+                    } else {
+                        stopTabAudio();
+                    }
+                } else if (tileData.action === 'toggleDemo') {
+                    demoMode = !demoMode;
+                    if (demoMode) audioEnabled = false;
+                } else if (tileData.action === 'toggleJack') {
+                    if (!audioEnabled) {
+                        connectJACK();
+                    } else {
+                        audioEnabled = false;
+                    }
+                } else if (tileData.action === 'toggleOutput') {
+                    toggleAudioOutput();
                 }
+                updateToggleStates();
             });
 
             button.addEventListener('mouseenter', () => {
-                button.style.background = 'rgba(0, 229, 255, 0.4)';
-                button.style.boxShadow = '0 0 15px rgba(0, 229, 255, 0.3)';
-                label.textContent = 'Fullscreen';
-                label.classList.add('visible');
+                button.style.background = `rgba(${hexToRgb(tileData.color)}, 0.4)`;
+                button.style.boxShadow = `0 0 20px ${tileData.color}`;
             });
 
             button.addEventListener('mouseleave', () => {
-                button.style.background = 'rgba(0, 229, 255, 0.2)';
-                button.style.boxShadow = 'none';
-                label.classList.remove('visible');
+                const isActive = getToggleState(tileData.action);
+                button.style.background = `rgba(${hexToRgb(tileData.color)}, ${isActive ? 0.5 : 0.2})`;
+                button.style.boxShadow = isActive ? `0 0 15px ${tileData.color}` : 'none';
             });
 
-            container.appendChild(button);
-            visual.appendChild(container);
+            visual.appendChild(button);
+            visual.button = button;
+            visual.tileData = tileData;
         }
+
+        // Button tile - momentary action, no state
+        function createButtonTile(visual, tileData) {
+            const button = document.createElement('div');
+            button.style.cssText = `
+                width: 100%; height: 100%;
+                background: rgba(${hexToRgb(tileData.color)}, 0.2);
+                border: 2px solid ${tileData.color};
+                border-radius: ${tileData.action === 'clearAll' ? '50%' : '8px'};
+                cursor: pointer;
+                transition: all 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+                color: ${tileData.color};
+                position: relative;
+            `;
+            button.textContent = tileData.icon;
+
+            // Add waveform canvas for audio buttons (hidden by default)
+            if (tileData.action === 'playLoop' || tileData.action === 'loadFile') {
+                const canvas = document.createElement('canvas');
+                canvas.width = 48;
+                canvas.height = 20;
+                canvas.style.cssText = `
+                    position: absolute;
+                    bottom: 4px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    width: 48px;
+                    height: 20px;
+                    border-radius: 3px;
+                    display: none;
+                    pointer-events: none;
+                `;
+                button.appendChild(canvas);
+                button.waveformCanvas = canvas;
+            }
+
+            button.addEventListener('click', () => {
+                if (tileData.action === 'loadFile') {
+                    loadAudioFile();
+                } else if (tileData.action === 'playLoop') {
+                    playLoop();
+                } else if (tileData.action === 'clearAll') {
+                    clearActuators();
+                    clearCollectors();
+                } else if (tileData.action === 'toggleFullscreen') {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                    } else {
+                        document.exitFullscreen();
+                    }
+                }
+            });
+
+            button.addEventListener('mousedown', () => {
+                button.style.transform = 'scale(0.9)';
+            });
+
+            button.addEventListener('mouseup', () => {
+                button.style.transform = 'scale(1)';
+            });
+
+            button.addEventListener('mouseenter', () => {
+                button.style.background = `rgba(${hexToRgb(tileData.color)}, 0.4)`;
+                button.style.boxShadow = `0 0 20px ${tileData.color}`;
+            });
+
+            button.addEventListener('mouseleave', () => {
+                button.style.background = `rgba(${hexToRgb(tileData.color)}, 0.2)`;
+                button.style.boxShadow = 'none';
+            });
+
+            visual.appendChild(button);
+        }
+
+        // Slider tile - horizontal slider, no label
+        function createSliderTile(visual, tileData) {
+            const track = document.createElement('div');
+            track.style.cssText = `
+                width: 100%;
+                height: 6px;
+                background: rgba(${hexToRgb(tileData.color)}, 0.3);
+                border-radius: 3px;
+                position: relative;
+                cursor: pointer;
+                margin: auto 0;
+            `;
+
+            const initialPercent = (tileData.default - tileData.min) / (tileData.max - tileData.min);
+            const thumb = document.createElement('div');
+            thumb.style.cssText = `
+                position: absolute;
+                width: 16px; height: 16px;
+                background: ${tileData.color};
+                border-radius: 50%;
+                left: ${initialPercent * 100}%;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                cursor: pointer;
+                box-shadow: 0 0 10px ${tileData.color};
+            `;
+            track.appendChild(thumb);
+
+            // Initialize variable
+            window[tileData.variable] = tileData.default;
+
+            let isDragging = false;
+
+            thumb.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // Don't trigger tile drag
+                isDragging = true;
+                thumb.style.transform = 'translate(-50%, -50%) scale(1.2)';
+                thumb.style.transition = 'none'; // Instant response
+
+                const rect = track.getBoundingClientRect();
+
+                function handleDrag(e) {
+                    if (!isDragging) return;
+                    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    thumb.style.left = `${percent * 100}%`;
+
+                    const value = tileData.min + percent * (tileData.max - tileData.min);
+                    window[tileData.variable] = value;
+                }
+
+                function stopDrag(e) {
+                    isDragging = false;
+                    thumb.style.transform = 'translate(-50%, -50%)';
+                    document.removeEventListener('mousemove', handleDrag);
+                    document.removeEventListener('mouseup', stopDrag);
+                    document.removeEventListener('mouseleave', stopDrag);
+                }
+
+                handleDrag(e);
+                document.addEventListener('mousemove', handleDrag);
+                document.addEventListener('mouseup', stopDrag);
+                document.addEventListener('mouseleave', stopDrag);
+            });
+
+            // Scroll wheel support
+            track.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Get current value
+                const currentValue = window[tileData.variable];
+                const range = tileData.max - tileData.min;
+                const step = range * 0.02; // 2% of range per scroll
+
+                // Update value
+                const newValue = Math.max(tileData.min, Math.min(tileData.max,
+                    currentValue - (e.deltaY > 0 ? step : -step)));
+
+                window[tileData.variable] = newValue;
+
+                // Update thumb position
+                const percent = (newValue - tileData.min) / range;
+                thumb.style.left = `${percent * 100}%`;
+            }, { passive: false });
+
+            visual.appendChild(track);
+        }
+
+        // Helper: convert hex to RGB for rgba()
+        function hexToRgb(hex) {
+            const r = parseInt(hex.substring(1, 3), 16);
+            const g = parseInt(hex.substring(3, 5), 16);
+            const b = parseInt(hex.substring(5, 7), 16);
+            return `${r}, ${g}, ${b}`;
+        }
+
+        // Helper: get current state of toggle
+        function getToggleState(action) {
+            if (action === 'toggleDemo') return demoMode;
+            if (action === 'toggleJack') return audioEnabled && !demoMode && !tabAudioActive;
+            if (action === 'toggleOutput') return outputEnabled;
+            if (action === 'captureTab') return tabAudioActive;
+            return false;
+        }
+
+        // Update all toggle button states
+        function updateToggleStates() {
+            document.querySelectorAll('.control-tile').forEach(tile => {
+                const visual = tile.querySelector('.param-visual');
+                if (visual && visual.button && visual.tileData && visual.tileData.type === 'toggle') {
+                    const isActive = getToggleState(visual.tileData.action);
+                    visual.button.style.background = `rgba(${hexToRgb(visual.tileData.color)}, ${isActive ? 0.5 : 0.2})`;
+                    visual.button.style.boxShadow = isActive ? `0 0 15px ${visual.tileData.color}` : 'none';
+                }
+            });
+        }
+
+        // Keep old update function for backwards compat
+        function updateAudioToggles() {
+            updateToggleStates();
+        }
+
+        // Mini-membrane - shows actuator/collector positions as SVG dots
+        function createMiniMembraneTile(visual, tileData) {
+            const container = document.createElement('div');
+            container.style.cssText = 'width: 100%; height: 100%; position: relative; background: rgba(0, 0, 0, 0.2); border-radius: 4px;';
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.style.cssText = 'width: 100%; height: 100%;';
+            svg.setAttribute('viewBox', '0 0 100 100');
+
+            container.appendChild(svg);
+            visual.appendChild(container);
+            visual.miniSvg = svg;
+        }
+
+        function updateMiniMembrane() {
+            const tile = document.getElementById('tile-mini-membrane');
+            if (!tile) return;
+
+            const visual = tile.querySelector('.param-visual');
+            if (!visual || !visual.miniSvg) return;
+
+            const svg = visual.miniSvg;
+            svg.innerHTML = '';
+
+            // Map actuators to SVG coordinates
+            const scale = 100 / membraneSize;
+
+            actuators.forEach(act => {
+                const cx = (act.x + membraneSize/2) * scale;
+                const cy = (act.y + membraneSize/2) * scale;
+                const color = act.channel === 'left' ? '#ff00ff' : (act.channel === 'right' ? '#00ffff' : '#ffff00');
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', cx);
+                circle.setAttribute('cy', cy);
+                circle.setAttribute('r', 2);
+                circle.setAttribute('fill', color);
+                svg.appendChild(circle);
+            });
+
+            collectors.forEach(col => {
+                const cx = (col.x + membraneSize/2) * scale;
+                const cy = (col.y + membraneSize/2) * scale;
+
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('cx', cx);
+                circle.setAttribute('cy', cy);
+                circle.setAttribute('r', 1.5);
+                circle.setAttribute('fill', '#00ff00');
+                svg.appendChild(circle);
+            });
+        }
+
 
         // Handle resize
         function handleResize() {
