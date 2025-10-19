@@ -1,0 +1,64 @@
+# Quick Cleanup Prompt (Copy this to another Claude)
+
+---
+
+I need you to organize the RMIX project folder at `/Users/harold/Projects/rmix-brane-audio-environment/`
+
+## Task
+
+1. **Create these folders:**
+   - `archive/prototypes/`
+   - `archive/old-docs/`
+   - `sessions/`
+
+2. **Move OLD PROTOTYPES to archive/prototypes/:**
+   - All `.html` files EXCEPT any that are clearly current/final
+   - Old `.js` files: audio-interfaces.js, audio-oscillator-coupler.js, falstad-oscillator.js, harmonic-oscillator.js, jack-websocket-bridge.js, physical-ball.js
+
+3. **Move OLD DOCS to archive/old-docs/:**
+   - FUTURE-ENHANCEMENTS.md
+   - JACK-BRIDGE-ANALYSIS.md
+   - PROGRESS-SUMMARY.md
+   - QUICKSTART.md
+   - STATUS.md
+   - TESTING-GUIDE.md
+   - WEBSOCKET-BRIDGE-README.md
+   - tiles-config.json
+
+4. **KEEP in root (DO NOT MOVE):**
+   - START-HERE.md
+   - README.md
+   - SCHEMA-v1.1.md
+   - INTEGRATION-GUIDE-SIMPLE.md
+   - FILE-ARCHITECTURE.md
+   - default-session.json
+   - default-session.md
+   - CLEANUP-INSTRUCTIONS.md
+   - three.min.js
+   - OrbitControls.js
+   - membrane-physics-core.js
+   - package.json
+   - .gitignore
+   - .git/ folder (NEVER MOVE THIS)
+   - old/ folder (keep as-is)
+
+5. **Create archive/README.md** explaining what's archived
+
+## After Cleanup
+
+Report:
+- How many files moved to prototypes/
+- How many files moved to old-docs/
+- How many files remain in root/
+- List any files you were unsure about
+
+## Critical Rules
+
+- NEVER move or touch `.git/` folder
+- When unsure, leave file in root and mention it
+- Use bash commands or file operations
+- Verify files exist before moving
+
+---
+
+Ready? Start cleanup now.

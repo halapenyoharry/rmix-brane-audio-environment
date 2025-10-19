@@ -47,11 +47,9 @@ Audio Input → Actuator (drives membrane like speaker cone)
 
 ## Running It
 
-1. Open `brane-with-v1actuaters-jack-extensions-working-janky-cone.html` in Firefox
-2. Press `D` for demo mode (no JACK needed)
-3. Press `A` to connect to JACK (requires Zen JACK Bridge extension)
-4. Click to add actuators
-5. Watch the membrane wobble
+See the archived prototypes in `archive/prototypes/` for older working versions.
+
+For the new unified schema system, see the implementation guides in the root directory.
 
 ## Philosophy
 
@@ -71,3 +69,76 @@ This isn't about making "realistic reverb." It's about reducing layers of abstra
 ---
 
 *"Make it so creativity is inevitable" - Rick Rubin*
+## ⚡ NEW: Unified Parameter Schema v1.1
+
+**Complete integration architecture ready!**
+
+### What's New
+
+Three new files define the complete system architecture:
+
+1. **`SCHEMA-v1.1.md`** - Complete specification (documentation)
+2. **`INTEGRATION-GUIDE-SIMPLE.md`** - Detailed implementation guide
+3. **`default-session.json`** - Example session file
+
+### Quick Start
+
+```bash
+# See the schema specification
+cat SCHEMA-v1.1.md
+
+# See implementation guide
+cat INTEGRATION-GUIDE-SIMPLE.md
+
+# See example session
+cat default-session.json
+```
+
+### Key Concepts
+
+**The Session File is Everything:**
+- One `.json` file defines the entire state (standard JSON, no dependencies)
+- Sources, actuators, collectors, parameters, curves
+- Like a Comfy UI workflow - save/load complete sessions
+
+**How It Works:**
+```
+default-session.json
+    ↓ (loads with native JSON.parse)
+ParameterController (central hub)
+    ↓ (reads)
+UI + Audio + Physics + Visual
+```
+
+**Computed Properties:**
+- Actuator frequency computed from size
+- Q factor computed from opacity
+- Gain computed from z-height
+- Never saved, always recomputed from spatial properties
+
+### Implementation Priority
+
+**Phase 1:** Schema parser (load/save sessions)  
+**Phase 2:** Parameter controller (smoothing, central state)  
+**Phase 3:** UI generator (auto-build controls from schema)  
+**Phase 4:** Actuator controller (balls affect membrane)  
+**Phase 5:** Full integration
+
+### File Locations
+
+| File | Purpose |
+|------|---------|
+| `SCHEMA-v1.1.md` | Specification (read by humans/AI) |
+| `default-session.json` | Default session (loaded on startup) |
+| `sessions/*.json` | User sessions |
+| `src/schema/parser.js` | Loads JSON → JavaScript |
+| `src/controllers/ParameterController.js` | Central state hub |
+
+### Next Steps
+
+1. Read `INTEGRATION-GUIDE-SIMPLE.md` for detailed implementation steps
+2. Review `default-session.json` for example structure
+3. Start with Phase 1: Schema Parser
+
+---
+
