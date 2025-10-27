@@ -249,8 +249,6 @@
         let audioAnalyser = null;
         let audioDataArray = null;
         let audioStream = null;
-        let websocket = null;
-        let outputEnabled = false;
 
         // Stereo channel analysers
         let leftAnalyser = null;
@@ -424,27 +422,9 @@
         }
 
         // Audio control wrappers for tiles
-        async function connectJACK() {
-            const success = await initJackAudio();
-            if (success) {
-                audioEnabled = true;
-                demoMode = false;
-                updateAudioToggles();
-            }
-        }
-
         function loadAudioFile() {
             initAudioFile();
             // Update will happen in initAudioFile callback
-        }
-
-        function toggleAudioOutput() {
-            if (!outputEnabled) {
-                initAudioOutput();
-            } else {
-                stopAudioOutput();
-            }
-            updateAudioToggles();
         }
 
         // Add actuator
@@ -559,59 +539,6 @@
             };
 
             input.click();
-        }
-
-        // Initialize JACK audio through extension
-        async function initJackAudio() {
-            try {
-                console.log('Requesting JACK audio access...');
-
-                // Check if mediaDevices API is available
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    throw new Error('Web Audio API not available. Try:\n- Using HTTPS (not http://)\n- Chrome/Chromium instead of Firefox\n- Checking browser security settings');
-                }
-
-                // Try to get JACK audio directly (bridge should provide it)
-                audioStream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        deviceId: 'jack-system-capture',
-                        channelCount: 2  // Request stereo
-                    }
-                });
-
-                // Create audio context
-                audioContext = new AudioContext();
-                const source = audioContext.createMediaStreamSource(audioStream);
-
-                // Create channel splitter for true stereo separation
-                const splitter = audioContext.createChannelSplitter(2);
-                source.connect(splitter);
-
-                // Create separate analysers for left and right channels
-                leftAnalyser = audioContext.createAnalyser();
-                leftAnalyser.fftSize = 256;
-                leftAnalyser.smoothingTimeConstant = 0.3;
-
-                rightAnalyser = audioContext.createAnalyser();
-                rightAnalyser.fftSize = 256;
-                rightAnalyser.smoothingTimeConstant = 0.3;
-
-                // Connect split channels to their analysers
-                splitter.connect(leftAnalyser, 0);   // Channel 0 = Left
-                splitter.connect(rightAnalyser, 1);  // Channel 1 = Right
-
-                // Create data arrays for each channel
-                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
-                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
-
-                console.log('JACK audio connected - stereo channels separated');
-                return true;
-
-            } catch (error) {
-                console.error('Failed to connect to JACK:', error);
-                alert('Failed to connect to JACK audio: ' + error.message + '\n\nMake sure:\n1. Zen JACK Bridge extension is loaded\n2. JACK server is running\n3. zen-jack-bridge client appears in patchbay');
-                return false;
-            }
         }
 
         // Tab audio capture
@@ -823,41 +750,6 @@
             }
         }
 
-        // WebSocket connection for output
-        function connectWebSocket() {
-            try {
-                console.log('Connecting to WebSocket output bridge...');
-                websocket = new WebSocket('ws://localhost:9001');
-
-                websocket.onopen = () => {
-                    console.log('WebSocket connected!');
-                    outputEnabled = true;
-                };
-
-                websocket.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    alert('Failed to connect to WebSocket bridge.\n\nMake sure the JACK bridge server is running on port 9001.');
-                };
-
-                websocket.onclose = () => {
-                    console.log('WebSocket disconnected');
-                    outputEnabled = false;
-                };
-
-            } catch (error) {
-                console.error('Failed to create WebSocket:', error);
-                alert('WebSocket connection failed: ' + error.message);
-            }
-        }
-
-        function disconnectWebSocket() {
-            if (websocket) {
-                websocket.close();
-                websocket = null;
-            }
-            outputEnabled = false;
-        }
-
         // Initialize audio output for collectors
         function initAudioOutput() {
             if (audioOutputEnabled) {
@@ -908,11 +800,11 @@
                 lastRight = targetRight;
             };
 
-            // Connect to speakers (which Firefox routes to JACK)
+            // Connect to speakers
             outputProcessor.connect(outputContext.destination);
 
             audioOutputEnabled = true;
-            console.log('Audio output enabled - routing to Firefox JACK output');
+            console.log('Audio output enabled - routing to system audio');
         }
 
         function stopAudioOutput() {
@@ -926,22 +818,6 @@
             }
             audioOutputEnabled = false;
             console.log('Audio output stopped');
-        }
-
-        // Send collector samples to WebSocket (legacy, can remove if not using)
-        function sendCollectorSamples() {
-            if (!outputEnabled || !websocket || websocket.readyState !== WebSocket.OPEN) {
-                return;
-            }
-
-            // Sample all collectors
-            const samples = collectors.map(collector => collector.sample());
-
-            if (samples.length > 0) {
-                // Send as Float32Array for efficiency
-                const buffer = new Float32Array(samples);
-                websocket.send(buffer);
-            }
         }
 
         // Physics update
@@ -1060,26 +936,7 @@
                 return;
             }
 
-            if (e.key === 'a' || e.key === 'A') {
-                // Toggle JACK audio
-                if (!audioEnabled) {
-                    const success = await initJackAudio();
-                    if (success) {
-                        audioEnabled = true;
-                        demoMode = false;
-                        updateAudioToggles();
-                    }
-                } else {
-                    audioEnabled = false;
-                    if (audioStream) {
-                        audioStream.getTracks().forEach(track => track.stop());
-                    }
-                    if (audioContext) {
-                        audioContext.close();
-                    }
-                    updateAudioToggles();
-                }
-            } else if (e.key === 'f' || e.key === 'F') {
+            if (e.key === 'f' || e.key === 'F') {
                 // Toggle fullscreen
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen();
@@ -1101,13 +958,6 @@
                     }
                 }
                 updateAudioToggles();
-            } else if (e.key === 'o' || e.key === 'O') {
-                // Toggle audio output
-                if (!audioOutputEnabled) {
-                    initAudioOutput();
-                } else {
-                    stopAudioOutput();
-                }
             } else if (e.key === 'r' || e.key === 'R') {
                 resetMembrane();
             } else if (e.key === 'c' || e.key === 'C') {
@@ -1134,10 +984,6 @@
                 if (tileData.action === 'captureTab' && tabAudioActive && leftAnalyser) {
                     shouldShow = true;
                     analyser = leftAnalyser;
-                } else if (tileData.action === 'toggleJack' && audioEnabled && !tabAudioActive && !audioFileMode && !demoMode && leftAnalyser) {
-                    // Only show on JACK button if JACK is the actual source (not file/loop/demo)
-                    shouldShow = true;
-                    analyser = leftAnalyser;
                 } else if (tileData.action === 'playLoop' && loopAudioElement && !loopAudioElement.paused && leftAnalyser) {
                     shouldShow = true;
                     analyser = leftAnalyser;
@@ -1160,7 +1006,7 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            // Update audio data from JACK
+            // Update audio data
             updateAudioData();
 
             // Update audio visualizers on tiles
@@ -1337,14 +1183,6 @@
                 } else if (tileData.action === 'toggleDemo') {
                     demoMode = !demoMode;
                     if (demoMode) audioEnabled = false;
-                } else if (tileData.action === 'toggleJack') {
-                    if (!audioEnabled) {
-                        connectJACK();
-                    } else {
-                        audioEnabled = false;
-                    }
-                } else if (tileData.action === 'toggleOutput') {
-                    toggleAudioOutput();
                 }
                 updateToggleStates();
             });
@@ -1542,8 +1380,6 @@
         // Helper: get current state of toggle
         function getToggleState(action) {
             if (action === 'toggleDemo') return demoMode;
-            if (action === 'toggleJack') return audioEnabled && !demoMode && !tabAudioActive;
-            if (action === 'toggleOutput') return outputEnabled;
             if (action === 'captureTab') return tabAudioActive;
             return false;
         }
@@ -1644,9 +1480,7 @@
         console.log('  Click          - Add actuator (solid sphere)');
         console.log('  Shift+Click    - Add collector (wireframe sphere)');
         console.log('  F              - Load audio file');
-        console.log('  A              - Connect JACK input (requires Zen JACK Bridge)');
         console.log('  D              - Demo mode (sine waves)');
-        console.log('  O              - Connect WebSocket output (requires bridge server)');
         console.log('  R              - Reset membrane');
         console.log('  C              - Clear actuators');
         console.log('  M              - Clear collectors');

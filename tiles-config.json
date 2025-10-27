@@ -28,24 +28,6 @@
       "icon": "📁"
     },
     {
-      "id": "jack-input",
-      "type": "toggle",
-      "width": 60,
-      "height": 60,
-      "action": "toggleJack",
-      "color": "#ff00ff",
-      "icon": "J"
-    },
-    {
-      "id": "audio-output",
-      "type": "toggle",
-      "width": 60,
-      "height": 60,
-      "action": "toggleOutput",
-      "color": "#00ff00",
-      "icon": "→"
-    },
-    {
       "id": "wave-speed",
       "type": "slider",
       "width": 120,
