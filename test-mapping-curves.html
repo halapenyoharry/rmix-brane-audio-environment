@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test MappingCurveEngine</title></head>
+<body>
+    <h1>MappingCurveEngine Test</h1>
+
+    <h2>Size → Frequency</h2>
+    <label>Size (mm): <input type="range" id="size" min="2" max="50" value="15"></label>
+    <span id="sizeVal">15</span>mm →
+    <span id="freqVal">?</span>Hz
+
+    <h2>Opacity → Q Factor</h2>
+    <label>Opacity: <input type="range" id="opacity" min="0.1" max="1" step="0.1" value="0.7"></label>
+    <span id="opacityVal">0.7</span> →
+    <span id="qVal">?</span>
+
+    <h2>Z-Height → Gain</h2>
+    <label>Z: <input type="range" id="z" min="0" max="20" value="5"></label>
+    <span id="zVal">5</span> →
+    <span id="gainVal">?</span>x
+
+    <h2>Frequency → Color</h2>
+    <span id="colorVal">?</span>° hue
+    <div id="colorBox" style="width:100px;height:50px;border:1px solid #fff;"></div>
+
+    <h3>Full Actuator Properties:</h3>
+    <pre id="fullProps"></pre>
+
+    <script src="src/schema/SchemaParser.js"></script>
+    <script src="src/visual/MappingCurveEngine.js"></script>
+    <script>
+        let mapper;
+
+        (async () => {
+            const parser = new SchemaParser();
+            const session = await parser.loadSession('./default-session.json');
+            mapper = new MappingCurveEngine(session);
+
+            function update() {
+                const size = parseFloat(document.getElementById('size').value);
+                const opacity = parseFloat(document.getElementById('opacity').value);
+                const z = parseFloat(document.getElementById('z').value);
+
+                // Individual curves
+                const freq = mapper.sizeToFrequency(size);
+                const q = mapper.opacityToQ(opacity);
+                const gain = mapper.zToGain(z);
+                const hue = mapper.frequencyToColor(freq);
+
+                document.getElementById('sizeVal').textContent = size;
+                document.getElementById('freqVal').textContent = freq.toFixed(1);
+
+                document.getElementById('opacityVal').textContent = opacity;
+                document.getElementById('qVal').textContent = q.toFixed(2);
+
+                document.getElementById('zVal').textContent = z;
+                document.getElementById('gainVal').textContent = gain.toFixed(3);
+
+                document.getElementById('colorVal').textContent = hue.toFixed(0);
+                document.getElementById('colorBox').style.backgroundColor =
+                    `hsl(${hue}, 100%, 50%)`;
+
+                // Full actuator
+                const actuator = {
+                    position: { x: 0, y: 0, z: z },
+                    size: { radius_mm: size },
+                    appearance: { opacity: opacity }
+                };
+
+                const props = mapper.computeActuatorProperties(actuator);
+                document.getElementById('fullProps').textContent =
+                    JSON.stringify(props, null, 2);
+            }
+
+            document.getElementById('size').oninput = update;
+            document.getElementById('opacity').oninput = update;
+            document.getElementById('z').oninput = update;
+
+            update();
+        })();
+    </script>
+</body>
+</html>

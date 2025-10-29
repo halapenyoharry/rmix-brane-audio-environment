@@ -1,106 +1,83 @@
 {
   "version": "1.1",
-  "name": "minimal-example",
-  "created": "2025-10-07T00:00:00Z",
-  "modified": "2025-10-07T00:00:00Z",
-  
+  "name": "default-session",
+  "created": "2025-10-26T00:00:00Z",
+  "modified": "2025-10-26T00:00:00Z",
   "sources": [
     {
-      "id": "source_demo",
-      "type": "oscillator",
-      "label": "Test Tone",
-      "enabled": true,
+      "id": "source_file_player",
+      "type": "file_player",
+      "label": "Audio Files",
+      "enabled": false,
       "config": {
-        "frequency": 440,
-        "waveform": "sine"
+        "playlist": [],
+        "currentTrack": 0,
+        "loop": false,
+        "loopRegion": {
+          "start": 0,
+          "end": null
+        }
       },
       "analysis": {
-        "fftSize": 2048,
-        "windowFunction": "hann",
-        "smoothing": 0.8
+        "fftSize": 256,
+        "smoothing": 0.3
       }
-    }
-  ],
-  
-  "actuators": [
+    },
     {
-      "id": "ball_demo",
-      "sourceId": "source_demo",
-      "enabled": true,
-      "channelMode": "mono",
-      "position": {
-        "x": 0,
-        "y": 0,
-        "z": 5
+      "id": "source_microphone",
+      "type": "microphone",
+      "label": "Mic/Line In",
+      "enabled": false,
+      "config": {
+        "deviceId": null,
+        "gain": 1.0
       },
-      "size": {
-        "radius_mm": 15
-      },
-      "appearance": {
-        "opacity": 0.7,
-        "color": null
-      },
-      "audioProcessing": {
-        "preFilter": {
-          "enabled": false
-        },
-        "postGain": {
-          "value": 1.0
-        },
-        "dryWetMix": 1.0
-      },
-      "forceModel": {
-        "type": "acceleration",
-        "scaling": "linear",
-        "maxForce": 100.0,
-        "minForce": 0.001,
-        "spatialDistribution": {
-          "type": "gaussian",
-          "sigma_source": "computed",
-          "falloff": 2.0
-        },
-        "temporalBehavior": {
-          "mode": "continuous",
-          "rampTime": 5.0,
-          "holdTime": 0
-        }
+      "analysis": {
+        "fftSize": 256,
+        "smoothing": 0.3
       }
-    }
-  ],
-  
-  "collectors": [
+    },
     {
-      "id": "collector_demo",
-      "enabled": true,
-      "position": {
-        "x": 20,
-        "y": 0,
-        "z": 0
-      },
-      "audioOutput": {
-        "destination": "master",
-        "gain": 1.0,
-        "channel": "left"
-      },
-      "sampling": {
-        "mode": "point",
-        "radius": 0
+      "id": "source_tab_capture",
+      "type": "tab_capture",
+      "label": "Browser Tab Audio",
+      "enabled": false,
+      "analysis": {
+        "fftSize": 256,
+        "smoothing": 0.3
+      }
+    },
+    {
+      "id": "source_demo_loops",
+      "type": "demo_loops",
+      "label": "Demo Loops",
+      "enabled": false,
+      "config": {
+        "folder": "./demo-loops/",
+        "files": [
+          "bass.wav",
+          "drums.wav",
+          "kick.wav",
+          "snare.wav"
+        ],
+        "currentIndex": 0,
+        "autoAdvance": true
       }
     }
   ],
-  
+  "actuators": [],
+  "collectors": [],
   "modulators": [],
-  
   "parameters": {
     "membrane": {
       "wave_speed": {
         "id": "membrane_wave_speed",
         "path": "/membrane/physics/wave_speed",
         "displayName": "Wave Speed",
-        "value": 0.3,
+        "value": 0.15,
         "min": 0.05,
-        "max": 0.8,
-        "default": 0.3,
+        "max": 0.3,
+        "default": 0.15,
         "unit": "c",
         "scaling": "linear",
         "updateRate": "frame",
@@ -114,17 +91,17 @@
           "type": "slider",
           "width": 120,
           "height": 60,
-          "color": "#00e5ff"
+          "color": "#4444ff"
         }
       },
       "damping": {
         "id": "membrane_damping",
         "path": "/membrane/physics/damping",
         "displayName": "Damping",
-        "value": 0.00265,
+        "value": 0.01,
         "min": 0.001,
         "max": 0.05,
-        "default": 0.00265,
+        "default": 0.01,
         "unit": "γ",
         "scaling": "logarithmic",
         "updateRate": "frame",
@@ -137,56 +114,35 @@
           "type": "slider",
           "width": 120,
           "height": 60,
-          "color": "#00e5ff"
+          "color": "#ff4444"
         }
       },
-      "boundary_type": {
-        "id": "membrane_boundary_type",
-        "path": "/membrane/physics/boundary_type",
-        "displayName": "Boundary",
-        "value": "fixed",
-        "type": "enum",
-        "enumValues": ["fixed", "free", "infinite"],
-        "default": "fixed",
-        "updateRate": "ui",
+      "actuator_gain": {
+        "id": "membrane_actuator_gain",
+        "path": "/membrane/physics/actuator_gain",
+        "displayName": "Actuator Gain",
+        "value": 3,
+        "min": 0.5,
+        "max": 5,
+        "default": 3,
+        "unit": "",
+        "scaling": "linear",
+        "updateRate": "frame",
         "group": "membrane",
         "smoothing": {
-          "enabled": false,
-          "type": "none"
+          "enabled": true,
+          "type": "exponential",
+          "timeConstant": 100
         },
         "ui": {
-          "type": "toggle-cycle",
-          "width": 80,
+          "type": "slider",
+          "width": 120,
           "height": 60,
-          "color": "#00e5ff"
-        }
-      }
-    },
-    "visual": {
-      "color_map": {
-        "id": "visual_color_map",
-        "path": "/visual/membrane/color_map",
-        "displayName": "Colors",
-        "value": "interpolateSpectral",
-        "type": "enum",
-        "enumValues": ["interpolateSpectral", "interpolateViridis", "interpolatePlasma"],
-        "default": "interpolateSpectral",
-        "updateRate": "frame",
-        "group": "visual",
-        "smoothing": {
-          "enabled": false,
-          "type": "none"
-        },
-        "ui": {
-          "type": "dropdown",
-          "width": 160,
-          "height": 60,
-          "color": "#ff00ff"
+          "color": "#44ff44"
         }
       }
     }
   },
-  
   "mappingCurves": {
     "actuator_size_to_frequency": {
       "id": "actuator_size_to_frequency",
@@ -195,66 +151,14 @@
       "curve": {
         "type": "power",
         "formula": "freq_hz = freq_max * (size_mm / size_max)^exponent",
-        "exponent": -2.0,
+        "exponent": -2,
         "size_min_mm": 2,
         "size_max_mm": 50,
         "freq_min_hz": 20,
         "freq_max_hz": 20000
       }
-    },
-    "actuator_transparency_to_q": {
-      "id": "actuator_transparency_to_q",
-      "path": "/audio/actuator/transparency_q_map",
-      "displayName": "Transparency → Q Factor",
-      "curve": {
-        "type": "exponential",
-        "formula": "q_factor = q_min + (1 - opacity) * (q_max - q_min)",
-        "opacity_min": 0.1,
-        "opacity_max": 1.0,
-        "q_min": 0.1,
-        "q_max": 100
-      }
-    },
-    "actuator_z_to_gain": {
-      "id": "actuator_z_to_gain",
-      "path": "/audio/actuator/z_gain_map",
-      "displayName": "Z-Height → Gain",
-      "curve": {
-        "type": "inverse_square",
-        "formula": "gain = base_gain / (1 + (z / scale)^2)",
-        "z_min": 0,
-        "z_max": 20,
-        "base_gain": 10.0,
-        "scale": 5.0
-      }
-    },
-    "actuator_gaussian_spread": {
-      "id": "actuator_gaussian_spread",
-      "path": "/membrane/actuator/gaussian_spread",
-      "displayName": "Size → Spread",
-      "curve": {
-        "type": "linear",
-        "formula": "sigma = size_mm * spread_factor",
-        "spread_factor": 2.0,
-        "sigma_min": 1.0,
-        "sigma_max": 20.0
-      }
-    },
-    "frequency_to_color": {
-      "id": "frequency_to_color",
-      "path": "/visual/actuator/freq_color_map",
-      "displayName": "Frequency → Color",
-      "curve": {
-        "type": "logarithmic",
-        "formula": "hue = 240 - (log10(freq_hz) / log10(freq_max)) * 240",
-        "freq_min_hz": 20,
-        "freq_max_hz": 20000,
-        "hue_min": 0,
-        "hue_max": 240
-      }
     }
   },
-  
   "uiLayout": {
     "toolbar": {
       "position": "bottom",
@@ -262,31 +166,11 @@
       "padding": 20,
       "gap": 12,
       "collapsible": true
-    },
-    "gestures": {
-      "drag_sensitivity": {
-        "horizontal": 1.0,
-        "vertical": 0.5,
-        "acceleration": 1.2
-      },
-      "scroll_sensitivity": {
-        "value": 0.01,
-        "acceleration": 1.0,
-        "invert": false
-      }
-    },
-    "keyboard_shortcuts": {
-      "place_actuator": "a",
-      "place_collector": "c",
-      "delete_selected": ["delete", "backspace"],
-      "save_snapshot": ["ctrl+s", "cmd+s"],
-      "reset_membrane": "r"
     }
   },
-  
   "metadata": {
     "masterOutput": {
-      "gain": 1.0,
+      "gain": 1,
       "limiter": {
         "enabled": true,
         "threshold": -0.1,
@@ -296,8 +180,57 @@
     "performance": {
       "target_fps": 60,
       "auto_quality": true,
-      "quality_threshold": 55,
       "gpu_acceleration": true
     }
+  },
+  "osc": {
+    "enabled": false,
+    "transport": "websocket",
+    "config": {
+      "wsPort": 8080,
+      "inPort": 8000,
+      "outPort": 9000
+    },
+    "mappings": [
+      {
+        "address": "/membrane/wave_speed",
+        "parameterId": "membrane_wave_speed",
+        "direction": "bidirectional",
+        "range": [
+          0.05,
+          0.8
+        ]
+      },
+      {
+        "address": "/membrane/damping",
+        "parameterId": "membrane_damping",
+        "direction": "bidirectional",
+        "range": [
+          0.001,
+          0.05
+        ]
+      },
+      {
+        "address": "/playback/play",
+        "action": "play",
+        "direction": "in"
+      },
+      {
+        "address": "/playback/pause",
+        "action": "pause",
+        "direction": "in"
+      },
+      {
+        "address": "/playback/next",
+        "action": "next",
+        "direction": "in"
+      },
+      {
+        "address": "/collector/*/level",
+        "source": "collector_levels",
+        "direction": "out",
+        "updateRate": 60
+      }
+    ]
   }
 }

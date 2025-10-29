@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test SchemaParser</title></head>
+<body>
+    <h1>SchemaParser Test</h1>
+    <button id="load">Load default-session.json</button>
+    <button id="save">Save Session</button>
+    <button id="new">Create New Session</button>
+    <pre id="output"></pre>
+
+    <script src="src/schema/SchemaParser.js"></script>
+    <script>
+        const parser = new SchemaParser();
+        let currentSession = null;
+
+        document.getElementById('load').onclick = async () => {
+            try {
+                currentSession = await parser.loadSession('./default-session.json');
+                document.getElementById('output').textContent =
+                    JSON.stringify(currentSession, null, 2);
+                console.log('Session loaded:', currentSession);
+            } catch (error) {
+                alert('Load failed: ' + error.message);
+            }
+        };
+
+        document.getElementById('save').onclick = () => {
+            if (currentSession) {
+                parser.saveSession(currentSession);
+            } else {
+                alert('No session loaded');
+            }
+        };
+
+        document.getElementById('new').onclick = () => {
+            currentSession = parser.createNewSession('test-session');
+            document.getElementById('output').textContent =
+                JSON.stringify(currentSession, null, 2);
+        };
+    </script>
+</body>
+</html>

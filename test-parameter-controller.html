@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test ParameterController</title></head>
+<body>
+    <h1>ParameterController Test</h1>
+
+    <h2>Wave Speed (with exponential smoothing)</h2>
+    <input type="range" id="waveSpeed" min="0.05" max="0.3" step="0.01" value="0.15">
+    <span id="waveSpeedValue">0.15</span>
+
+    <h2>Damping (no smoothing)</h2>
+    <input type="range" id="damping" min="0.001" max="0.05" step="0.001" value="0.01">
+    <span id="dampingValue">0.01</span>
+
+    <button id="reset">Reset All</button>
+
+    <h3>Current Values (smoothed):</h3>
+    <pre id="currentValues"></pre>
+
+    <h3>Target Values:</h3>
+    <pre id="targetValues"></pre>
+
+    <script src="src/schema/SchemaParser.js"></script>
+    <script src="src/controllers/ParameterController.js"></script>
+    <script>
+        let paramController;
+
+        // Load session and create controller
+        (async () => {
+            const parser = new SchemaParser();
+            const session = await parser.loadSession('./default-session.json');
+            paramController = new ParameterController(session);
+
+            // Subscribe to changes
+            paramController.subscribe('membrane_wave_speed', (value) => {
+                document.getElementById('waveSpeedValue').textContent = value.toFixed(3);
+                console.log('Wave speed changed:', value);
+            });
+
+            paramController.subscribe('membrane_damping', (value) => {
+                document.getElementById('dampingValue').textContent = value.toFixed(4);
+                console.log('Damping changed:', value);
+            });
+
+            // UI handlers
+            document.getElementById('waveSpeed').oninput = (e) => {
+                paramController.setValue('membrane_wave_speed', parseFloat(e.target.value));
+            };
+
+            document.getElementById('damping').oninput = (e) => {
+                paramController.setValue('membrane_damping', parseFloat(e.target.value));
+            };
+
+            document.getElementById('reset').onclick = () => {
+                paramController.resetAll();
+                document.getElementById('waveSpeed').value =
+                    paramController.getValue('membrane_wave_speed');
+                document.getElementById('damping').value =
+                    paramController.getValue('membrane_damping');
+            };
+
+            // Animation loop to update smoothing
+            let lastTime = performance.now();
+            function animate() {
+                const now = performance.now();
+                const deltaTime = now - lastTime;
+                lastTime = now;
+
+                paramController.update(deltaTime);
+
+                // Display current vs target
+                document.getElementById('currentValues').textContent =
+                    `Wave Speed: ${paramController.getValue('membrane_wave_speed').toFixed(3)}\n` +
+                    `Damping: ${paramController.getValue('membrane_damping').toFixed(4)}`;
+
+                document.getElementById('targetValues').textContent =
+                    `Wave Speed: ${paramController.targetValues.get('membrane_wave_speed').toFixed(3)}\n` +
+                    `Damping: ${paramController.targetValues.get('membrane_damping').toFixed(4)}`;
+
+                requestAnimationFrame(animate);
+            }
+            animate();
+
+        })();
+    </script>
+</body>
+</html>

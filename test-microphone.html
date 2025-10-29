@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test Microphone</title></head>
+<body>
+    <h1>MicrophoneInput Test</h1>
+    <div id="controls">
+        <button id="listDevices">1. List Devices</button>
+        <select id="deviceList" style="display: none;"></select>
+        <button id="start">2. Start Mic</button>
+        <button id="stop">3. Stop Mic</button>
+    </div>
+    <div id="status">Mic off</div>
+    <canvas id="visualizer" width="400" height="100"></canvas>
+
+    <script src="src/audio/MicrophoneInput.js"></script>
+    <script>
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const mic = new MicrophoneInput(audioContext);
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        const deviceList = document.getElementById('deviceList');
+
+        document.getElementById('start').onclick = async () => {
+            // Resume context on user gesture
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            const selectedDeviceId = deviceList.value;
+            console.log(`Attempting to start mic with deviceId: ${selectedDeviceId || 'default'}`)
+            await mic.start(selectedDeviceId);
+            document.getElementById('status').textContent = 'Mic active';
+            visualize();
+        };
+
+        document.getElementById('stop').onclick = () => {
+            mic.stop();
+            document.getElementById('status').textContent = 'Mic off';
+        };
+
+        document.getElementById('listDevices').onclick = async () => {
+            const devices = await MicrophoneInput.getDevices();
+            console.log('Audio devices:', devices);
+            
+            deviceList.innerHTML = ''; // Clear previous list
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label;
+                deviceList.appendChild(option);
+            });
+            deviceList.style.display = 'inline-block';
+        };
+
+        function visualize() {
+            if (!mic.isActive) {
+                // Clear canvas when stopped
+                ctx.fillStyle = '#0a0e27';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+
+            const dataL = new Uint8Array(mic.analyserL.frequencyBinCount);
+            mic.analyserL.getByteFrequencyData(dataL);
+
+            ctx.fillStyle = '#0a0e27';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#00e5ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            const barWidth = canvas.width / dataL.length;
+            for (let i = 0; i < dataL.length; i++) {
+                const barHeight = (dataL[i] / 255) * canvas.height;
+                const x = i * barWidth;
+                const y = canvas.height - barHeight;
+                ctx.rect(x, y, barWidth, barHeight);
+            }
+            ctx.fillStyle = '#00e5ff';
+            ctx.fill();
+
+            requestAnimationFrame(visualize);
+        }
+    </script>
+</body>
+</html>
