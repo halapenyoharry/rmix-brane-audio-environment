@@ -619,6 +619,32 @@
             initializeArrays();
         }
 
+        // Toggle wireframe — one job
+        function toggleWireframe() {
+            material.wireframe = !material.wireframe;
+            updateToggleStates();
+        }
+
+        // Rebuild mesh + physics at new grid resolution — one job
+        window.gridResolution = 100;
+        let rebuildThrottle = null;
+        function rebuildMesh(newSize) {
+            newSize = Math.round(newSize);
+            if (newSize === gridSize) return;
+            gridSize = newSize;
+
+            // Rebuild Three.js geometry
+            membrane.geometry.dispose();
+            membrane.geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+
+            // Rebuild physics at new resolution (clears state)
+            physics.setGridSize(gridSize);
+
+            // Clear actuators/collectors — their grid coords are now stale
+            clearActuators();
+            clearCollectors();
+        }
+
         function clearActuators() {
             actuators.forEach(act => {
                 if (act.visual) scene.remove(act.visual);
@@ -1330,6 +1356,8 @@
                 'damping':        { x: 750, y: 10 },
                 'clear-all':      { x: 920, y: 10 },
                 'fullscreen':     { x: 990, y: 10 },
+                'wireframe':      { x: 1060, y: 10 },
+                'grid-size':      { x: 1130, y: 10 },
             };
             tilesConfig.tiles.forEach(tile => {
                 tilePositions[tile.id] = defaultPositions[tile.id] || { x: 10, y: 10 };
@@ -1472,8 +1500,10 @@
                 } else if (tileData.action === 'toggleDemo') {
                     demoMode = !demoMode;
                     if (demoMode) audioEnabled = false;
+                } else if (tileData.action === 'toggleWireframe') {
+                    toggleWireframe();
                 }
-                
+
                 updateToggleStates();
             });
 
@@ -1619,6 +1649,21 @@
                     const y = h / 2 + amp * Math.sin((x / w) * 3 * Math.PI * 2);
                     x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
                 }
+            } else if (tileData.variable === 'gridResolution') {
+                // Grid density — shows the mesh you're setting
+                ctx.stroke(); // close any open path
+                ctx.beginPath();
+                const cells = Math.round(3 + t * 9); // 3–12 visible cells
+                const pad = 4;
+                const gw = w - pad * 2, gh = h - pad * 2;
+                for (let i = 0; i <= cells; i++) {
+                    const x = pad + (i / cells) * gw;
+                    ctx.moveTo(x, pad); ctx.lineTo(x, pad + gh);
+                }
+                for (let j = 0; j <= cells; j++) {
+                    const y = pad + (j / cells) * gh;
+                    ctx.moveTo(pad, y); ctx.lineTo(pad + gw, y);
+                }
             }
             ctx.stroke();
             ctx.shadowBlur = 0;
@@ -1627,7 +1672,10 @@
             ctx.fillStyle = `rgba(${hexToRgb(tileData.color)}, 0.7)`;
             ctx.font = '8px JetBrains Mono, monospace';
             ctx.textAlign = 'right';
-            ctx.fillText(value.toPrecision(4), w - 2, h - 2);
+            const label = tileData.variable === 'gridResolution'
+                ? `${Math.round(value)}×${Math.round(value)}`
+                : value.toPrecision(4);
+            ctx.fillText(label, w - 2, h - 2);
         }
 
         // Slider tile — waveform canvas + scrubber
@@ -1679,7 +1727,12 @@
                 const pct = (value - tileData.min) / (tileData.max - tileData.min);
                 thumb.style.left = `${pct * 100}%`;
                 drawParamWaveform(canvas, tileData, value);
-                if (!audioEnabled && !demoMode) testStrikeIfSilent();
+                if (tileData.variable === 'gridResolution') {
+                    clearTimeout(rebuildThrottle);
+                    rebuildThrottle = setTimeout(() => rebuildMesh(value), 400);
+                } else if (!audioEnabled && !demoMode) {
+                    testStrikeIfSilent();
+                }
             }
 
             let isDragging = false;
@@ -1903,6 +1956,7 @@
             if (action === 'toggleDemo') return demoMode;
             if (action === 'captureTab') return tabAudioActive;
             if (action === 'toggleMic') return micActive;
+            if (action === 'toggleWireframe') return material.wireframe;
             return false;
         }
 

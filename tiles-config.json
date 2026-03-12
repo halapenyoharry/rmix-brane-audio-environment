@@ -88,6 +88,26 @@
       "icon": "⛶"
     },
     {
+      "id": "wireframe",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "toggleWireframe",
+      "color": "#00ffaa",
+      "icon": "⬡"
+    },
+    {
+      "id": "grid-size",
+      "type": "slider",
+      "width": 160,
+      "height": 90,
+      "min": 20,
+      "max": 150,
+      "default": 100,
+      "variable": "gridResolution",
+      "color": "#aa44ff"
+    },
+    {
       "id": "mini-membrane",
       "type": "mini-membrane",
       "width": 120,
