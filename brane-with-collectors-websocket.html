@@ -111,27 +111,192 @@
             font-size: 18px;
             z-index: 200;
         }
+
+        /* Slider Inspector Panel */
+        #slider-inspector {
+            display: none;
+            position: fixed;
+            z-index: 500;
+            background: rgba(8, 12, 32, 0.96);
+            border: 1px solid rgba(0, 229, 255, 0.4);
+            border-radius: 10px;
+            padding: 0;
+            width: 280px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 229, 255, 0.1);
+            backdrop-filter: blur(20px);
+            font-family: 'JetBrains Mono', monospace;
+            color: #00e5ff;
+            user-select: none;
+        }
+        #slider-inspector.visible { display: block; }
+
+        #inspector-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px 8px;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+            cursor: move;
+        }
+        #inspector-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #00e5ff;
+            font-weight: 400;
+        }
+        #inspector-close {
+            background: none;
+            border: none;
+            color: rgba(0, 229, 255, 0.5);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 0;
+            line-height: 1;
+        }
+        #inspector-close:hover { color: #00e5ff; }
+
+        #inspector-body { padding: 14px; }
+
+        .inspector-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            gap: 8px;
+        }
+        .inspector-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(0, 229, 255, 0.5);
+            width: 32px;
+            flex-shrink: 0;
+        }
+        .inspector-value-input {
+            background: rgba(0, 229, 255, 0.07);
+            border: 1px solid rgba(0, 229, 255, 0.25);
+            border-radius: 4px;
+            color: #00e5ff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            padding: 4px 8px;
+            width: 100%;
+            outline: none;
+        }
+        .inspector-value-input:focus {
+            border-color: rgba(0, 229, 255, 0.6);
+            background: rgba(0, 229, 255, 0.12);
+        }
+        .inspector-value-input.small { width: 80px; }
+
+        #inspector-big-slider-track {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(0, 229, 255, 0.15);
+            position: relative;
+            cursor: pointer;
+            margin: 4px 0 12px;
+        }
+        #inspector-big-slider-fill {
+            height: 100%;
+            border-radius: 4px;
+            position: absolute;
+            left: 0; top: 0;
+            pointer-events: none;
+        }
+        #inspector-big-slider-thumb {
+            position: absolute;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            box-shadow: 0 0 12px currentColor;
+        }
+        #inspector-reset {
+            background: rgba(0, 229, 255, 0.08);
+            border: 1px solid rgba(0, 229, 255, 0.2);
+            border-radius: 4px;
+            color: rgba(0, 229, 255, 0.6);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 5px 10px;
+            cursor: pointer;
+            width: 100%;
+        }
+        #inspector-reset:hover {
+            background: rgba(0, 229, 255, 0.15);
+            color: #00e5ff;
+        }
     </style>
 </head>
 <body>
     <div id="loading">Loading Three.js...</div>
     <div id="canvas-container"></div>
 
+    <!-- Slider Inspector Panel -->
+    <div id="slider-inspector">
+        <div id="inspector-header">
+            <span id="inspector-title">Parameter</span>
+            <button id="inspector-close">×</button>
+        </div>
+        <div id="inspector-body">
+            <div id="inspector-big-slider-track">
+                <div id="inspector-big-slider-fill"></div>
+                <div id="inspector-big-slider-thumb"></div>
+            </div>
+            <div class="inspector-row">
+                <span class="inspector-label">val</span>
+                <input id="inspector-val-input" class="inspector-value-input" type="number" step="any">
+            </div>
+            <div class="inspector-row">
+                <span class="inspector-label">min</span>
+                <input id="inspector-min-input" class="inspector-value-input" type="number" step="any">
+                <span class="inspector-label" style="width:24px;text-align:center">max</span>
+                <input id="inspector-max-input" class="inspector-value-input" type="number" step="any">
+            </div>
+            <button id="inspector-reset">reset to default</button>
+        </div>
+    </div>
+
     <!-- Tile-based control panel -->
     <div id="controls-container">
         <!-- Tiles will be created dynamically by JavaScript -->
     </div>
 
-    <!-- Load Three.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Load Three.js from local -->
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
 
     <!-- Load D3.js for UI controls -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
     
+    <script src="membrane-physics-core.js"></script>
+    <script src="src/audio/MicrophoneInput.js"></script>
+    <script src="src/schema/SchemaParser.js"></script>
+    <script src="src/visual/MappingCurveEngine.js"></script>
     <script>
         // Hide loading once Three.js loads
         document.getElementById('loading').style.display = 'none';
+
+        // Initialize Mapping Engine
+        const parser = new SchemaParser();
+        let mapper = null;
+        
+        // Load default session for visual mappings
+        (async () => {
+            try {
+                const session = await parser.loadSession('default-session.json');
+                mapper = new MappingCurveEngine(session);
+                console.log("🎨 Visual Engine Loaded");
+            } catch (e) {
+                console.warn("Using default visual mappings", e);
+                mapper = new MappingCurveEngine({}); 
+            }
+        })();
 
         // Scene setup with Harold's midnight alaska aesthetic
         const scene = new THREE.Scene();
@@ -225,22 +390,26 @@
         membrane.rotation.x = -Math.PI / 2;
         scene.add(membrane);
 
-        // Physics arrays
-        let heights = [];
-        let velocities = [];
-        let waveSpeed = 0.3;
-        let damping = 0.00265;
+        // Physics Engine Integration
+        const physics = new MembranePhysics({
+            gridSize: gridSize,
+            membraneSize: membraneSize,
+            waveSpeed: 0.3,
+            damping: 0.00265,
+            boundaryType: 'fixed'
+        });
+
+        // Initialize UI variables on window for D3 binding
+        window.waveSpeed = physics.waveSpeed;
+        window.damping = physics.damping;
+        window.actuatorGain = 3.0; // Use window directly for gain
 
         function initializeArrays() {
-            heights = new Array(gridSize + 1);
-            velocities = new Array(gridSize + 1);
-            for (let i = 0; i <= gridSize; i++) {
-                heights[i] = new Array(gridSize + 1).fill(0);
-                velocities[i] = new Array(gridSize + 1).fill(0);
-            }
+            physics.initializeArrays();
         }
 
         // Actuator and Collector system
+        // Note: we just use window.actuatorGain above instead of a duplicate local variable
         let actuators = [];
         let collectors = [];
         let audioEnabled = false;
@@ -263,6 +432,10 @@
 
         // Tab audio capture
         let tabAudioActive = false;
+        
+        // Microphone Input
+        let micInput = null;
+        let micActive = false;
 
         // Demo loops
         let loopAudioElement = null;
@@ -290,6 +463,27 @@
                 this.gain = 1.0;
                 this.visual = null;
                 this.demoPhase = Math.random() * Math.PI * 2;
+                
+                // Visual properties
+                this.currentAmplitude = 0;
+                this.baseSize = 2.0; // Visual radius
+                this.baseColor = new THREE.Color();
+                
+                // Assign mapped properties (random size for variety since we don't have drag-size yet)
+                // Use deterministic random based on position so it doesn't flicker on reload if we saved
+                const seed = Math.abs(x * y * 1000);
+                const randomSize = 15 + (seed % 35); // 15-50mm range
+                
+                if (mapper) {
+                    const freq = mapper.sizeToFrequency(randomSize);
+                    const hue = mapper.frequencyToColor(freq);
+                    this.baseColor.setHSL(hue / 360, 1.0, 0.5);
+                } else {
+                    // Fallback colors if mapper not ready
+                    if (channel === 'left') this.baseColor.setHex(0xff00ff);
+                    else if (channel === 'right') this.baseColor.setHex(0x00ffff);
+                    else this.baseColor.setHex(0xffff00);
+                }
             }
 
             apply() {
@@ -316,7 +510,7 @@
                             sum += leftAudioData[i] + rightAudioData[i];
                         }
                         const avg = sum / (leftAudioData.length * 2);
-                        force = ((avg - 128) / 128) * 3;
+                        force = ((avg - 128) / 128) * window.actuatorGain;
                         audioData = null;  // Skip single-channel processing below
                     }
 
@@ -327,21 +521,41 @@
                         }
                         const avg = sum / audioData.length;
                         // Convert audio sample to force: 128 = 0, 0 = -max, 255 = +max
-                        force = ((avg - 128) / 128) * 3;
+                        force = ((avg - 128) / 128) * window.actuatorGain;
                     }
                 }
+                
+                // Store amplitude for visual pulsing (smoothed)
+                const targetAmp = Math.abs(force);
+                this.currentAmplitude += (targetAmp - this.currentAmplitude) * 0.2;
 
                 // Apply force to membrane as an actuator
                 if (this.gridX >= 0 && this.gridX <= gridSize &&
                     this.gridY >= 0 && this.gridY <= gridSize) {
                     // Apply audio force to membrane
-                    velocities[this.gridX][this.gridY] += force * 0.1;
+                    physics.velocities[this.gridX][this.gridY] += force * 0.1;
                     
                     // Keep ball at fixed height above membrane rest position
                     if (this.visual) {
                         this.visual.position.y = 2; // Fixed height
+                        this.updateVisual();
                     }
                 }
+            }
+            
+            updateVisual() {
+                if (!this.visual) return;
+                
+                // Pulse size based on amplitude
+                const scale = 1.0 + (this.currentAmplitude * 0.5);
+                this.visual.scale.set(scale, scale, scale);
+                
+                // Pulse emission/brightness
+                const emis = 0.3 + (this.currentAmplitude * 0.7);
+                this.visual.material.opacity = 0.6 + (this.currentAmplitude * 0.4);
+                
+                // Optional: slight color shift on pulse?
+                // For now, just stick to size/opacity pulse as it's cleaner
             }
         }
 
@@ -374,14 +588,14 @@
 
                     switch(this.mode) {
                         case 'displacement':
-                            signal = heights[this.gridX][this.gridY];
+                            signal = physics.heights[this.gridX][this.gridY];
                             break;
                         case 'velocity':
-                            signal = velocities[this.gridX][this.gridY];
+                            signal = physics.velocities[this.gridX][this.gridY];
                             break;
                         case 'acceleration':
                             // TODO: compute from velocity derivative
-                            signal = velocities[this.gridX][this.gridY];
+                            signal = physics.velocities[this.gridX][this.gridY];
                             break;
                     }
                 }
@@ -432,14 +646,16 @@
             const actuator = new Actuator(x, y, channel);
             actuators.push(actuator);
 
-            const color = channel === 'left' ? 0xff00ff : (channel === 'right' ? 0x00ffff : 0xffff00);
+            // Use the baseColor determined in constructor (via mapper or fallback)
+            const material = new THREE.MeshBasicMaterial({
+                color: actuator.baseColor,
+                transparent: true,
+                opacity: 0.7
+            });
+
             const indicator = new THREE.Mesh(
                 new THREE.SphereGeometry(2, 16, 16),
-                new THREE.MeshBasicMaterial({
-                    color: color,
-                    transparent: true,
-                    opacity: 0.7
-                })
+                material
             );
             indicator.position.set(x, 2, y);
             scene.add(indicator);
@@ -542,7 +758,72 @@
         }
 
         // Tab audio capture
+        async function toggleMic() {
+            if (!audioContext) {
+                // Initialize audio context on first user interaction
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 48000
+                });
+            }
+
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            
+            // Initialize mic helper if needed
+            if (!micInput) {
+                micInput = new MicrophoneInput(audioContext);
+                
+                // If we already have analysers, use them
+                if (leftAnalyser && rightAnalyser) {
+                    micInput.analyserL = leftAnalyser;
+                    micInput.analyserR = rightAnalyser;
+                }
+            }
+
+            if (!micActive) {
+                try {
+                    await micInput.start();
+                    micActive = true;
+                    audioEnabled = true;
+                    
+                    // If we didn't have analysers before, grab them from micInput
+                    // Note: MicrophoneInput.js will create them if we passed null
+                    if (!leftAnalyser || !rightAnalyser) {
+                        leftAnalyser = micInput.analyserL;
+                        rightAnalyser = micInput.analyserR;
+                        
+                        // Alloc buffers
+                        leftAudioData = new Uint8Array(leftAnalyser.frequencyBinCount);
+                        rightAudioData = new Uint8Array(rightAnalyser.frequencyBinCount);
+                    }
+                    
+                    console.log('Microphone input started');
+                } catch (e) {
+                    console.error('Failed to start mic', e);
+                    alert('Could not access microphone: ' + e.message);
+                }
+            } else {
+                micInput.stop();
+                micActive = false;
+                
+                // If no other audio sources, disable processing
+                if (!tabAudioActive && !audioFileMode && !demoMode) {
+                    // audioEnabled = false; // Keep enabled to avoid glitching
+                }
+                console.log('Microphone input stopped');
+            }
+            
+            updateToggleStates();
+        }
+
         async function captureTabAudio() {
+            // If already active, stop it
+            if (tabAudioActive) {
+                stopTabAudio();
+                return;
+            }
+
             try {
                 console.log('Requesting tab audio capture...');
 
@@ -554,6 +835,7 @@
                     throw new Error('getDisplayMedia not available. This usually means:\n- You need to access via localhost (Chrome blocks this on remote HTTP)\n- OR set up HTTPS for remote access');
                 }
 
+                // Chrome requires video:true in getDisplayMedia - we discard video tracks immediately after
                 const stream = await navigator.mediaDevices.getDisplayMedia({
                     audio: {
                         echoCancellation: false,
@@ -561,8 +843,15 @@
                         autoGainControl: false,
                         channelCount: 2
                     },
-                    video: false
+                    video: true
                 });
+
+                // Drop video tracks - we only want audio
+                stream.getVideoTracks().forEach(track => track.stop());
+
+                if (stream.getAudioTracks().length === 0) {
+                    throw new Error('No audio track in capture stream. Make sure to select a tab (not a window/screen) and check "Share tab audio".');
+                }
 
                 // Create audio context if needed
                 if (!audioContext) {
@@ -600,7 +889,7 @@
 
             } catch (error) {
                 console.error('Tab capture failed:', error);
-                alert('Tab audio capture failed: ' + error.message + '\n\nNote: This works in Chrome/Edge, not Safari.');
+                alert('Tab audio capture failed: ' + error.message + '\n\nTips:\n- Select a tab (not "Entire Screen" or a window)\n- Check the "Share tab audio" checkbox in the dialog\n- Works in Chrome/Edge, not Safari.');
             }
         }
 
@@ -822,35 +1111,19 @@
 
         // Physics update
         function updatePhysics() {
-            const newHeights = new Array(gridSize + 1).fill(0).map(() => new Array(gridSize + 1).fill(0));
+            // Update physics parameters from UI globals
+            physics.waveSpeed = Number(window.waveSpeed);
+            physics.damping = Number(window.damping);
+            window.actuatorGain = Number(window.actuatorGain);
+            
+            // Step physics simulation
+            physics.updatePhysics();
 
-            // Wave equation
-            for (let i = 1; i < gridSize; i++) {
-                for (let j = 1; j < gridSize; j++) {
-                    const laplacian = (
-                        heights[i + 1][j] + heights[i - 1][j] +
-                        heights[i][j + 1] + heights[i][j - 1] -
-                        4 * heights[i][j]
-                    );
-
-                    velocities[i][j] += waveSpeed * waveSpeed * laplacian;
-                    velocities[i][j] *= (1 - damping);
-                    newHeights[i][j] = heights[i][j] + velocities[i][j];
-                }
-            }
-
-            // Fixed boundaries
-            for (let i = 0; i <= gridSize; i++) {
-                newHeights[0][i] = 0;
-                newHeights[gridSize][i] = 0;
-                newHeights[i][0] = 0;
-                newHeights[i][gridSize] = 0;
-            }
-
-            heights = newHeights;
-
-            // Update geometry
+            // Setup for visualization
+            const heights = physics.heights;
             const positions = membrane.geometry.attributes.position.array;
+
+            // Update geometry from physics simulation
             for (let i = 0; i <= gridSize; i++) {
                 for (let j = 0; j <= gridSize; j++) {
                     const index = (i * (gridSize + 1) + j) * 3 + 2;
@@ -1043,12 +1316,23 @@
             const response = await fetch('tiles-config.json');
             tilesConfig = await response.json();
 
-            // Initialize tile positions (bottom of screen, spread horizontally)
-            const startY = window.innerHeight - 140;
-            let xOffset = 20;
+            // Default layout: two rows along the top, grouped by function
+            // Row 1 (y=10): mini-membrane | input toggles | physics sliders
+            // Row 2 (y=80): utilities
+            const defaultPositions = {
+                'mini-membrane':  { x: 10,  y: 10 },
+                'tab-capture':    { x: 140, y: 10 },
+                'mic-input':      { x: 205, y: 10 },
+                'demo-loops':     { x: 270, y: 10 },
+                'file-input':     { x: 335, y: 10 },
+                'wave-speed':     { x: 410, y: 10 },
+                'gain':           { x: 580, y: 10 },
+                'damping':        { x: 750, y: 10 },
+                'clear-all':      { x: 920, y: 10 },
+                'fullscreen':     { x: 990, y: 10 },
+            };
             tilesConfig.tiles.forEach(tile => {
-                tilePositions[tile.id] = { x: xOffset, y: startY };
-                xOffset += (tile.width || 100) + 20;
+                tilePositions[tile.id] = defaultPositions[tile.id] || { x: 10, y: 10 };
             });
 
             // D3 tile creation
@@ -1174,7 +1458,12 @@
             button.waveformCanvas = canvas;
 
             button.addEventListener('click', () => {
-                if (tileData.action === 'captureTab') {
+                // Dynamic dispatch if function exists on window
+                if (typeof window[tileData.action] === 'function') {
+                    window[tileData.action]();
+                }
+                // Legacy fallback (can probably be removed found if everything is on window)
+                else if (tileData.action === 'captureTab') {
                     if (!tabAudioActive) {
                         captureTabAudio();
                     } else {
@@ -1184,6 +1473,7 @@
                     demoMode = !demoMode;
                     if (demoMode) audioEnabled = false;
                 }
+                
                 updateToggleStates();
             });
 
@@ -1280,94 +1570,325 @@
             visual.appendChild(button);
         }
 
-        // Slider tile - horizontal slider, no label
+        // Draw parameter-specific waveform into canvas
+        function drawParamWaveform(canvas, tileData, value) {
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const t = (value - tileData.min) / (tileData.max - tileData.min); // 0–1
+
+            // Baseline
+            ctx.strokeStyle = `rgba(${hexToRgb(tileData.color)}, 0.12)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, h / 2);
+            ctx.lineTo(w, h / 2);
+            ctx.stroke();
+
+            // Waveform
+            ctx.strokeStyle = tileData.color;
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = tileData.color;
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+
+            if (tileData.variable === 'waveSpeed') {
+                // Wave density shows speed — more cycles = faster
+                const cycles = 1 + t * 7;
+                const amp = h * 0.35;
+                for (let x = 0; x <= w; x++) {
+                    const y = h / 2 + amp * Math.sin((x / w) * cycles * Math.PI * 2);
+                    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+            } else if (tileData.variable === 'damping') {
+                // Decaying envelope — faster decay = more damping
+                const decayRate = 1 + t * 18;
+                const amp = h * 0.38;
+                for (let x = 0; x <= w; x++) {
+                    const tx = x / w;
+                    const env = Math.exp(-decayRate * tx);
+                    const y = h / 2 + amp * env * Math.sin(tx * 5 * Math.PI * 2);
+                    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+            } else if (tileData.variable === 'actuatorGain') {
+                // Amplitude shows drive level
+                const amp = h * (0.08 + t * 0.38);
+                for (let x = 0; x <= w; x++) {
+                    const y = h / 2 + amp * Math.sin((x / w) * 3 * Math.PI * 2);
+                    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Value readout bottom-right
+            ctx.fillStyle = `rgba(${hexToRgb(tileData.color)}, 0.7)`;
+            ctx.font = '8px JetBrains Mono, monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(value.toPrecision(4), w - 2, h - 2);
+        }
+
+        // Slider tile — waveform canvas + scrubber
         function createSliderTile(visual, tileData) {
+            const names = { waveSpeed: 'Wave Speed', damping: 'Damping', actuatorGain: 'Input Gain' };
+            const tileEl = visual.closest('.control-tile') || visual.parentElement;
+            tileEl.title = `${names[tileData.variable] || tileData.variable} — right-click to inspect`;
+
+            visual.style.cssText += 'flex-direction: column; justify-content: flex-end; padding: 6px; gap: 5px;';
+
+            // Waveform canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = (tileData.width || 160) - 12;
+            canvas.height = (tileData.height || 90) - 28;
+            canvas.style.cssText = 'width: 100%; flex: 1; display: block; cursor: default;';
+            visual.appendChild(canvas);
+
+            // Slider track
             const track = document.createElement('div');
             track.style.cssText = `
-                width: 100%;
-                height: 6px;
-                background: rgba(${hexToRgb(tileData.color)}, 0.3);
-                border-radius: 3px;
-                position: relative;
-                cursor: pointer;
-                margin: auto 0;
+                width: 100%; height: 4px;
+                background: rgba(${hexToRgb(tileData.color)}, 0.2);
+                border-radius: 2px; position: relative; cursor: pointer; flex-shrink: 0;
             `;
 
             const initialPercent = (tileData.default - tileData.min) / (tileData.max - tileData.min);
             const thumb = document.createElement('div');
             thumb.style.cssText = `
                 position: absolute;
-                width: 16px; height: 16px;
+                width: 12px; height: 12px;
                 background: ${tileData.color};
                 border-radius: 50%;
                 left: ${initialPercent * 100}%;
                 top: 50%;
                 transform: translate(-50%, -50%);
                 cursor: pointer;
-                box-shadow: 0 0 10px ${tileData.color};
+                box-shadow: 0 0 8px ${tileData.color};
             `;
             track.appendChild(thumb);
+            visual.appendChild(track);
 
-            // Initialize variable
+            // Initialize variable and draw
             window[tileData.variable] = tileData.default;
+            drawParamWaveform(canvas, tileData, tileData.default);
+
+            function updateSlider(value) {
+                value = Math.max(tileData.min, Math.min(tileData.max, value));
+                window[tileData.variable] = value;
+                const pct = (value - tileData.min) / (tileData.max - tileData.min);
+                thumb.style.left = `${pct * 100}%`;
+                drawParamWaveform(canvas, tileData, value);
+                if (!audioEnabled && !demoMode) testStrikeIfSilent();
+            }
 
             let isDragging = false;
-
             thumb.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                e.stopPropagation(); // Don't trigger tile drag
+                e.stopPropagation();
                 isDragging = true;
-                thumb.style.transform = 'translate(-50%, -50%) scale(1.2)';
-                thumb.style.transition = 'none'; // Instant response
-
+                thumb.style.transform = 'translate(-50%, -50%) scale(1.3)';
                 const rect = track.getBoundingClientRect();
-
-                function handleDrag(e) {
+                function onMove(e) {
                     if (!isDragging) return;
-                    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    thumb.style.left = `${percent * 100}%`;
-
-                    const value = tileData.min + percent * (tileData.max - tileData.min);
-                    window[tileData.variable] = value;
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    updateSlider(tileData.min + pct * (tileData.max - tileData.min));
                 }
-
-                function stopDrag(e) {
+                function onUp() {
                     isDragging = false;
                     thumb.style.transform = 'translate(-50%, -50%)';
-                    document.removeEventListener('mousemove', handleDrag);
-                    document.removeEventListener('mouseup', stopDrag);
-                    document.removeEventListener('mouseleave', stopDrag);
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
                 }
-
-                handleDrag(e);
-                document.addEventListener('mousemove', handleDrag);
-                document.addEventListener('mouseup', stopDrag);
-                document.addEventListener('mouseleave', stopDrag);
+                onMove(e);
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
             });
 
-            // Scroll wheel support
             track.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-
-                // Get current value
-                const currentValue = window[tileData.variable];
-                const range = tileData.max - tileData.min;
-                const step = range * 0.02; // 2% of range per scroll
-
-                // Update value
-                const newValue = Math.max(tileData.min, Math.min(tileData.max,
-                    currentValue - (e.deltaY > 0 ? step : -step)));
-
-                window[tileData.variable] = newValue;
-
-                // Update thumb position
-                const percent = (newValue - tileData.min) / range;
-                thumb.style.left = `${percent * 100}%`;
+                const step = (tileData.max - tileData.min) * 0.02;
+                updateSlider(window[tileData.variable] + (e.deltaY < 0 ? step : -step));
             }, { passive: false });
 
-            visual.appendChild(track);
+            track.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openSliderInspector(tileData, thumb, track, canvas);
+            });
+
+            track._tileData = tileData;
+            track._thumb = thumb;
+            track._canvas = canvas;
         }
+
+        // ─── Slider Inspector ─────────────────────────────────────────────
+
+        // Strike membrane center with a single impulse when there's no audio
+        let strikeThrottle = 0;
+        function testStrikeIfSilent() {
+            if (audioEnabled || demoMode) return;
+            const now = performance.now();
+            if (now - strikeThrottle < 300) return; // debounce
+            strikeThrottle = now;
+            physics.strikeMembrane(0, 0, 3.0, 8);
+        }
+
+        let inspectorTarget = null; // { tileData, thumb, track, canvas }
+        let inspectorAnimFrame = null;
+
+        function openSliderInspector(tileData, thumb, track, canvas) {
+            inspectorTarget = { tileData: Object.assign({}, tileData), thumb, track, canvas, origMin: tileData.min, origMax: tileData.max };
+
+            const panel = document.getElementById('slider-inspector');
+            const names = { waveSpeed: 'Wave Speed', damping: 'Damping', actuatorGain: 'Input Gain' };
+            document.getElementById('inspector-title').textContent = names[tileData.variable] || tileData.variable;
+
+            // Color the slider elements
+            const color = tileData.color;
+            document.getElementById('inspector-big-slider-fill').style.background = color;
+            document.getElementById('inspector-big-slider-thumb').style.background = color;
+            document.getElementById('inspector-big-slider-thumb').style.color = color;
+
+            // Position panel near tile but keep on screen
+            const tileEl = track.closest('.control-tile');
+            const rect = tileEl ? tileEl.getBoundingClientRect() : { left: 100, bottom: 80 };
+            let px = rect.left;
+            let py = rect.bottom + 8;
+            if (px + 280 > window.innerWidth) px = window.innerWidth - 290;
+            if (py + 220 > window.innerHeight) py = rect.top - 228;
+            panel.style.left = px + 'px';
+            panel.style.top = py + 'px';
+
+            syncInspectorUI();
+            panel.classList.add('visible');
+
+            // Live update loop
+            cancelAnimationFrame(inspectorAnimFrame);
+            function updateLoop() {
+                if (!panel.classList.contains('visible')) return;
+                syncInspectorUI();
+                inspectorAnimFrame = requestAnimationFrame(updateLoop);
+            }
+            inspectorAnimFrame = requestAnimationFrame(updateLoop);
+        }
+
+        function syncInspectorUI() {
+            if (!inspectorTarget) return;
+            const { tileData } = inspectorTarget;
+            const val = window[tileData.variable];
+            const pct = Math.max(0, Math.min(1, (val - tileData.min) / (tileData.max - tileData.min)));
+
+            document.getElementById('inspector-big-slider-thumb').style.left = (pct * 100) + '%';
+            document.getElementById('inspector-big-slider-fill').style.width = (pct * 100) + '%';
+
+            const valInput = document.getElementById('inspector-val-input');
+            if (document.activeElement !== valInput) valInput.value = val.toPrecision(6);
+            document.getElementById('inspector-min-input').value = tileData.min;
+            document.getElementById('inspector-max-input').value = tileData.max;
+        }
+
+        function setInspectorValue(val) {
+            if (!inspectorTarget) return;
+            const { tileData, thumb, canvas } = inspectorTarget;
+            val = Math.max(tileData.min, Math.min(tileData.max, val));
+            window[tileData.variable] = val;
+            const pct = (val - tileData.min) / (tileData.max - tileData.min);
+            thumb.style.left = (pct * 100) + '%';
+            if (canvas) drawParamWaveform(canvas, tileData, val);
+            if (!audioEnabled && !demoMode) testStrikeIfSilent();
+        }
+
+        // Inspector big slider drag
+        (function() {
+            const bigTrack = document.getElementById('inspector-big-slider-track');
+            const bigThumb = document.getElementById('inspector-big-slider-thumb');
+            let dragging = false;
+
+            function dragTo(clientX) {
+                if (!inspectorTarget) return;
+                const rect = bigTrack.getBoundingClientRect();
+                const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                const { tileData } = inspectorTarget;
+                const val = tileData.min + pct * (tileData.max - tileData.min);
+                setInspectorValue(val);
+            }
+
+            bigThumb.addEventListener('mousedown', e => { e.preventDefault(); dragging = true; });
+            bigTrack.addEventListener('mousedown', e => { e.preventDefault(); dragging = true; dragTo(e.clientX); });
+            document.addEventListener('mousemove', e => { if (dragging) dragTo(e.clientX); });
+            document.addEventListener('mouseup', () => { dragging = false; });
+
+            bigTrack.addEventListener('wheel', e => {
+                e.preventDefault();
+                if (!inspectorTarget) return;
+                const { tileData } = inspectorTarget;
+                const step = (tileData.max - tileData.min) * 0.01;
+                setInspectorValue(window[tileData.variable] + (e.deltaY < 0 ? step : -step));
+            }, { passive: false });
+        })();
+
+        // Inspector value input
+        document.getElementById('inspector-val-input').addEventListener('change', e => {
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v)) setInspectorValue(v);
+        });
+
+        // Inspector min/max inputs
+        document.getElementById('inspector-min-input').addEventListener('change', e => {
+            if (!inspectorTarget) return;
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v) && v < inspectorTarget.tileData.max) {
+                inspectorTarget.tileData.min = v;
+            }
+        });
+        document.getElementById('inspector-max-input').addEventListener('change', e => {
+            if (!inspectorTarget) return;
+            const v = parseFloat(e.target.value);
+            if (!isNaN(v) && v > inspectorTarget.tileData.min) {
+                inspectorTarget.tileData.max = v;
+            }
+        });
+
+        // Inspector reset button
+        document.getElementById('inspector-reset').addEventListener('click', () => {
+            if (!inspectorTarget) return;
+            const { tileData, origMin, origMax } = inspectorTarget;
+            tileData.min = origMin;
+            tileData.max = origMax;
+            const orig = tilesConfig.tiles.find(t => t.variable === tileData.variable);
+            if (orig) setInspectorValue(orig.default);
+        });
+
+        // Inspector close button
+        document.getElementById('inspector-close').addEventListener('click', () => {
+            document.getElementById('slider-inspector').classList.remove('visible');
+            cancelAnimationFrame(inspectorAnimFrame);
+            inspectorTarget = null;
+        });
+
+        // Inspector drag (header)
+        (function() {
+            const panel = document.getElementById('slider-inspector');
+            const header = document.getElementById('inspector-header');
+            let ox, oy, dragging = false;
+            header.addEventListener('mousedown', e => {
+                if (e.target.id === 'inspector-close') return;
+                dragging = true;
+                ox = e.clientX - panel.offsetLeft;
+                oy = e.clientY - panel.offsetTop;
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                panel.style.left = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, e.clientX - ox)) + 'px';
+                panel.style.top = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, e.clientY - oy)) + 'px';
+            });
+            document.addEventListener('mouseup', () => { dragging = false; });
+        })();
+
+        // ─── End Slider Inspector ─────────────────────────────────────────
 
         // Helper: convert hex to RGB for rgba()
         function hexToRgb(hex) {
@@ -1381,6 +1902,7 @@
         function getToggleState(action) {
             if (action === 'toggleDemo') return demoMode;
             if (action === 'captureTab') return tabAudioActive;
+            if (action === 'toggleMic') return micActive;
             return false;
         }
 

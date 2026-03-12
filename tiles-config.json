@@ -10,6 +10,15 @@
       "icon": "🎵"
     },
     {
+      "id": "mic-input",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "toggleMic",
+      "color": "#ff0088",
+      "icon": "🎤"
+    },
+    {
       "id": "demo-loops",
       "type": "button",
       "width": 60,
@@ -30,8 +39,8 @@
     {
       "id": "wave-speed",
       "type": "slider",
-      "width": 120,
-      "height": 60,
+      "width": 160,
+      "height": 90,
       "min": 0.05,
       "max": 0.3,
       "default": 0.15,
@@ -41,9 +50,9 @@
     {
       "id": "damping",
       "type": "slider",
-      "width": 120,
-      "height": 60,
-      "min": 0.001,
+      "width": 160,
+      "height": 90,
+      "min": 0,
       "max": 0.05,
       "default": 0.01,
       "variable": "damping",
@@ -52,10 +61,10 @@
     {
       "id": "gain",
       "type": "slider",
-      "width": 120,
-      "height": 60,
+      "width": 160,
+      "height": 90,
       "min": 0.5,
-      "max": 5.0,
+      "max": 15.0,
       "default": 3.0,
       "variable": "actuatorGain",
       "color": "#44ff44"
