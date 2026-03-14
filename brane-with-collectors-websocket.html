@@ -308,7 +308,8 @@
             0.01,
             5000
         );
-        camera.position.set(100, 80, 100);
+        // Front-on view: centered so L=left R=right, low angle, near edge sits at screen bottom
+        camera.position.set(0, 45, 155);
         camera.lookAt(0, 0, 0);
 
         const renderer = new THREE.WebGLRenderer({
@@ -321,6 +322,7 @@
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
+        controls.target.set(0, 0, 0);
 
         // Lighting optimized for Harold's colors
         const ambientLight = new THREE.AmbientLight(0x1a237e, 0.4);
@@ -340,8 +342,6 @@
             uniforms: {
                 time: { value: 0 },
                 waveHeight: { value: 20.0 },
-                colorNegative: { value: new THREE.Color(0x00ffff) },
-                colorPositive: { value: new THREE.Color(0xff00ff) },
                 opacity: { value: 1.0 }
             },
             vertexShader: `
@@ -357,8 +357,6 @@
                 }
             `,
             fragmentShader: `
-                uniform vec3 colorNegative;
-                uniform vec3 colorPositive;
                 uniform float opacity;
                 uniform float time;
 
@@ -366,11 +364,18 @@
                 varying vec3 vPosition;
                 varying float vHeight;
 
+                vec3 hsl2rgb(float h, float s, float l) {
+                    vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+                    return l + s * (rgb - 0.5) * (1.0 - abs(2.0 * l - 1.0));
+                }
+
                 void main() {
                     float t = (vHeight + 10.0) / 20.0;
                     t = clamp(t, 0.0, 1.0);
 
-                    vec3 color = mix(colorNegative, colorPositive, t);
+                    // Full spectrum sweep centered on cyan at rest (height=0, t=0.5)
+                    float hue = mod(0.5 + (t - 0.5) * 0.75, 1.0);
+                    vec3 color = hsl2rgb(hue, 1.0, 0.5);
 
                     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
                     float diff = max(dot(vNormal, lightDir), 0.0);
@@ -532,12 +537,28 @@
                 // Apply force to membrane as an actuator
                 if (this.gridX >= 0 && this.gridX <= gridSize &&
                     this.gridY >= 0 && this.gridY <= gridSize) {
-                    // Apply audio force to membrane
-                    physics.velocities[this.gridX][this.gridY] += force * 0.1;
-                    
-                    // Keep ball at fixed height above membrane rest position
+
+                    // Height above membrane drives coupling strength (inverse square)
+                    const memSurface = physics.heights[this.gridX] && physics.heights[this.gridX][this.gridY]
+                        ? physics.heights[this.gridX][this.gridY] : 0;
+                    const height = Math.max(0.5, 2 + memSurface * 0.8);
+                    const heightGain = 4.0 / (1 + Math.pow(height / 4.0, 2));
+                    const scaledForce = force * heightGain;
+
+                    // Gaussian spread — size drives footprint radius
+                    const fRadius = Math.max(2, Math.round(this.baseSize * 1.5));
+                    for (let i = -fRadius; i <= fRadius; i++) {
+                        for (let j = -fRadius; j <= fRadius; j++) {
+                            const gi = this.gridX + i;
+                            const gj = this.gridY + j;
+                            if (gi >= 0 && gi <= gridSize && gj >= 0 && gj <= gridSize) {
+                                const gaussian = Math.exp(-(i*i + j*j) / (fRadius * fRadius * 0.5));
+                                physics.velocities[gi][gj] += scaledForce * gaussian * 0.1;
+                            }
+                        }
+                    }
+
                     if (this.visual) {
-                        this.visual.position.y = 2; // Fixed height
                         this.updateVisual();
                     }
                 }
@@ -545,17 +566,14 @@
             
             updateVisual() {
                 if (!this.visual) return;
-                
-                // Pulse size based on amplitude
-                const scale = 1.0 + (this.currentAmplitude * 0.5);
-                this.visual.scale.set(scale, scale, scale);
-                
-                // Pulse emission/brightness
-                const emis = 0.3 + (this.currentAmplitude * 0.7);
+
+                // Track membrane surface — piston motion
+                const memHeight = physics.heights[this.gridX] && physics.heights[this.gridX][this.gridY]
+                    ? physics.heights[this.gridX][this.gridY] : 0;
+                this.visual.position.y = 2 + memHeight * 0.8;
+
+                // Opacity pulses with amplitude — size stays fixed (size = frequency/footprint)
                 this.visual.material.opacity = 0.6 + (this.currentAmplitude * 0.4);
-                
-                // Optional: slight color shift on pulse?
-                // For now, just stick to size/opacity pulse as it's cleaner
             }
         }
 
@@ -1730,8 +1748,6 @@
                 if (tileData.variable === 'gridResolution') {
                     clearTimeout(rebuildThrottle);
                     rebuildThrottle = setTimeout(() => rebuildMesh(value), 400);
-                } else if (!audioEnabled && !demoMode) {
-                    testStrikeIfSilent();
                 }
             }
 
@@ -1778,15 +1794,6 @@
 
         // ─── Slider Inspector ─────────────────────────────────────────────
 
-        // Strike membrane center with a single impulse when there's no audio
-        let strikeThrottle = 0;
-        function testStrikeIfSilent() {
-            if (audioEnabled || demoMode) return;
-            const now = performance.now();
-            if (now - strikeThrottle < 300) return; // debounce
-            strikeThrottle = now;
-            physics.strikeMembrane(0, 0, 3.0, 8);
-        }
 
         let inspectorTarget = null; // { tileData, thumb, track, canvas }
         let inspectorAnimFrame = null;
@@ -1850,7 +1857,6 @@
             const pct = (val - tileData.min) / (tileData.max - tileData.min);
             thumb.style.left = (pct * 100) + '%';
             if (canvas) drawParamWaveform(canvas, tileData, val);
-            if (!audioEnabled && !demoMode) testStrikeIfSilent();
         }
 
         // Inspector big slider drag

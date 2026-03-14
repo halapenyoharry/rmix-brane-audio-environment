@@ -157,6 +157,16 @@
         "freq_min_hz": 20,
         "freq_max_hz": 20000
       }
+    },
+    "frequency_to_color": {
+      "id": "frequency_to_color",
+      "path": "/visual/color_map",
+      "displayName": "Frequency → Color",
+      "curve": {
+        "type": "logarithmic",
+        "freq_min_hz": 20,
+        "freq_max_hz": 20000
+      }
     }
   },
   "uiLayout": {

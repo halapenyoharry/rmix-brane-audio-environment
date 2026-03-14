@@ -14,8 +14,8 @@ class MicrophoneInput {
         this.context = audioContext;
         this.stream = null;
         this.sourceNode = null;
-        this.analyserL = null;
-        this.analyserR = null;
+        this.analyserL = null; // Can be assigned externally
+        this.analyserR = null; // Can be assigned externally
         this.isActive = false;
     }
 
@@ -24,6 +24,8 @@ class MicrophoneInput {
      * @param {string} deviceId - Optional specific device ID
      */
     async start(deviceId = null) {
+        if (this.isActive) return;
+        
         try {
             const constraints = {
                 audio: {
@@ -42,16 +44,22 @@ class MicrophoneInput {
             this.stream = await navigator.mediaDevices.getUserMedia(constraints);
             this.sourceNode = this.context.createMediaStreamSource(this.stream);
 
-            // Setup stereo analysers
+            // setup analysers if not provided externally
+            if (!this.analyserL) {
+                this.analyserL = this.context.createAnalyser();
+                this.analyserL.fftSize = 256;
+                this.analyserL.smoothingTimeConstant = 0.3;
+            }
+            
+            if (!this.analyserR) {
+                this.analyserR = this.context.createAnalyser();
+                this.analyserR.fftSize = 256;
+                this.analyserR.smoothingTimeConstant = 0.3;
+            }
+
+            // Connect to stereo analysers (passed in or created)
             const splitter = this.context.createChannelSplitter(2);
-            this.analyserL = this.context.createAnalyser();
-            this.analyserR = this.context.createAnalyser();
-
-            this.analyserL.fftSize = 256;
-            this.analyserR.fftSize = 256;
-            this.analyserL.smoothingTimeConstant = 0.3;
-            this.analyserR.smoothingTimeConstant = 0.3;
-
+            
             this.sourceNode.connect(splitter);
             splitter.connect(this.analyserL, 0);
             splitter.connect(this.analyserR, 1);
