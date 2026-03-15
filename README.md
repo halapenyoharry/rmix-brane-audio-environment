@@ -1,144 +1,83 @@
 # rmix-BAE (Brane Audio Environment)
 
-## What This Is
-
-A web-based audio processor that uses actual membrane physics to create acoustic spaces.
-
-**Not**: A traditional "reverb plugin" or audio effect
-**Is**: Physical modeling of actuator → membrane → microphone chain
+A web-based audio processor that uses actual 2D membrane physics for sound transformation. Not a traditional reverb or visualizer — this physically models the actuator-membrane-microphone chain using wave equations.
 
 ## The Physics
 
 ```
-Audio Input → Actuator (drives membrane like speaker cone)
-                ↓
-         2D Wave Equation Simulation
-         (actual physics, not DSP tricks)
-                ↓
-    Virtual Microphones (sample the membrane)
-                ↓
-           Audio Output
+Audio Input → Actuators → 2D Wave Equation → Collectors → Audio Output
 ```
 
-## Current State
+An actuator drives the membrane the way a speaker cone drives air. A collector samples the membrane the way a microphone samples a room. Between them, the wave equation does what it does — no DSP tricks, no algorithmic reverb, no convolution. Just physics.
 
-### ✅ Working
-- **Wave physics core** (membrane-physics-core.js) - 1% GPU usage
-- **3D visualization** (Three.js + WebGL shaders)
-- **Actuator system** (v1 - drives membrane from audio)
-- **Demo mode** (sine waves, no JACK needed)
-- **JACK integration** (via Zen JACK Bridge extension - "working but janky")
+### Why the Cone Shape
 
-### 🔨 In Progress
-- **Collectors (virtual mics)** - planned but not fully implemented
-- **JACK audio flow** - connects but has issues
+When you play audio through an actuator, you'll see the membrane form a cone-shaped depression beneath it. This is real.
 
-### ❌ Known Issues
-- JACK bridge marked as "janky" - needs investigation
-- No mic sampling output yet
-- Got stuck in harmonic prediction rabbit hole (postponed)
+A speaker cone pushes air molecules away from their resting position. Those molecules push their neighbors, and the disturbance spreads outward — that's sound propagation. But the molecules at the center, right in front of the cone, stay displaced as long as the cone keeps driving them. The result is a pressure well: deepest at the source, smoothing outward.
 
-## Files
+The membrane shows exactly this. The actuator pushes hardest at its center (Gaussian force spread), the disturbance radiates outward as waves, and the center stays depressed because it keeps getting driven. The cone shape IS the pressure field of a sound source, seen from above.
 
-- **brane-with-v1actuaters-jack-extensions-working-janky-cone.html** - Current working version
-- **dev-plan.md** - Original development phases
-- **membrane-physics-core.js** - Wave equation solver
-- **jack-bridge-template.html** - JACK connection template
+In air, atmospheric pressure provides a restoring force — it pushes displaced molecules back toward equilibrium, which is why sound oscillates rather than just pushing everything flat. The membrane's equivalent is material stiffness: the tendency of the membrane to return to its rest position regardless of what its neighbors are doing. This is being developed as a configurable parameter (`k` in the wave equation), giving users control over how the membrane recovers — from floppy rubber to tight kevlar.
+
+The current wave equation:
+
+```
+∂²u/∂t² = c²∇²u - γ∂u/∂t
+```
+
+- `c²∇²u` — Tension. Each point pulls toward its neighbors. This is what makes waves propagate.
+- `γ∂u/∂t` — Damping. Energy dissipation. How fast vibrations die out.
+
+With stiffness (in development):
+
+```
+∂²u/∂t² = c²∇²u - γ∂u/∂t - ku
+```
+
+- `ku` — Stiffness. Each point pulls toward zero (rest position). This is what prevents the cone from sinking indefinitely and makes the membrane oscillate around equilibrium, the way real sound oscillates in air.
+
+### What You're Seeing Is Real
+
+The patterns on the membrane aren't generated for aesthetics. They emerge from the wave equation — interference, standing waves, resonant modes, damping. This is cymatics: the visible structure of vibration. The membrane is colored using a full spectral sweep mapped to displacement height, so you're literally watching energy distribution across a 2D surface in real time.
 
 ## Running It
 
-See the archived prototypes in `archive/prototypes/` for older working versions.
-
-For the new unified schema system, see the implementation guides in the root directory.
-
-## Philosophy
-
-From "The Membrane and the Strike":
-
-> The membrane wobbles regardless of observation. Sometimes those wobbles become Harry.
-
-This isn't about making "realistic reverb." It's about reducing layers of abstraction - simulating the actual physics of sound propagation through a 2D membrane, then sampling it like you'd mic a real acoustic space.
-
-## Next Steps
-
-1. Fix JACK integration issues
-2. Implement basic collector (one virtual mic)
-3. Get audio flowing: JACK in → membrane → JACK out
-4. Worry about harmonic prediction later
-
----
-
-*"Make it so creativity is inevitable" - Rick Rubin*
-## ⚡ NEW: Unified Parameter Schema v1.1
-
-**Complete integration architecture ready!**
-
-### What's New
-
-Three new files define the complete system architecture:
-
-1. **`SCHEMA-v1.1.md`** - Complete specification (documentation)
-2. **`INTEGRATION-GUIDE-SIMPLE.md`** - Detailed implementation guide
-3. **`default-session.json`** - Example session file
-
-### Quick Start
-
 ```bash
-# See the schema specification
-cat SCHEMA-v1.1.md
-
-# See implementation guide
-cat INTEGRATION-GUIDE-SIMPLE.md
-
-# See example session
-cat default-session.json
+# No build step — open directly in a browser
+open brane-with-collectors-websocket.html
 ```
 
-### Key Concepts
+Works in Chrome, Edge, Firefox. No server required for basic use.
 
-**The Session File is Everything:**
-- One `.json` file defines the entire state (standard JSON, no dependencies)
-- Sources, actuators, collectors, parameters, curves
-- Like a Comfy UI workflow - save/load complete sessions
+### Audio Sources
+- **Tab capture** — capture audio from any browser tab
+- **Microphone** — system audio input
+- **Audio files** — drag or load MP3/WAV
+- **Demo loops** — built-in test audio (bass, drums, kick, snare)
 
-**How It Works:**
-```
-default-session.json
-    ↓ (loads with native JSON.parse)
-ParameterController (central hub)
-    ↓ (reads)
-UI + Audio + Physics + Visual
-```
+### Controls
+- Click on membrane to add an actuator
+- Shift+Click to add a collector
+- Drag controls to reposition
+- Sliders for wave speed, damping, gain, grid resolution
 
-**Computed Properties:**
-- Actuator frequency computed from size
-- Q factor computed from opacity
-- Gain computed from z-height
-- Never saved, always recomputed from spatial properties
-
-### Implementation Priority
-
-**Phase 1:** Schema parser (load/save sessions)  
-**Phase 2:** Parameter controller (smoothing, central state)  
-**Phase 3:** UI generator (auto-build controls from schema)  
-**Phase 4:** Actuator controller (balls affect membrane)  
-**Phase 5:** Full integration
-
-### File Locations
+## Architecture
 
 | File | Purpose |
 |------|---------|
-| `SCHEMA-v1.1.md` | Specification (read by humans/AI) |
-| `default-session.json` | Default session (loaded on startup) |
-| `sessions/*.json` | User sessions |
-| `src/schema/parser.js` | Loads JSON → JavaScript |
-| `src/controllers/ParameterController.js` | Central state hub |
+| `brane-with-collectors-websocket.html` | Main application |
+| `membrane-physics-core.js` | Wave equation solver (do not modify) |
+| `tiles-config.json` | UI control configuration |
+| `default-session.json` | Session state schema |
+| `src/` | Modular components (schema, audio, visual, controllers) |
 
-### Next Steps
+## Philosophy
 
-1. Read `INTEGRATION-GUIDE-SIMPLE.md` for detailed implementation steps
-2. Review `default-session.json` for example structure
-3. Start with Phase 1: Schema Parser
+> The membrane wobbles regardless of observation. Sometimes those wobbles become Harry.
+
+This isn't about making "realistic reverb." It's about reducing abstraction — simulating the actual physics of sound propagation through a 2D membrane, then sampling it like you'd mic a real acoustic space. The visuals aren't decoration. They're information. What you see is what the sound is doing.
 
 ---
 
+*"Make it so creativity is inevitable" — Rick Rubin*

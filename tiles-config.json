@@ -108,6 +108,14 @@
       "color": "#aa44ff"
     },
     {
+      "id": "keyboard",
+      "type": "keyboard",
+      "width": 320,
+      "height": 100,
+      "action": "toggleKeyboard",
+      "color": "#00e5ff"
+    },
+    {
       "id": "mini-membrane",
       "type": "mini-membrane",
       "width": 120,
