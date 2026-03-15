@@ -1,27 +1,21 @@
 # Archived Files
 
-This folder contains old prototypes and documentation from the project's development history.
+Everything here is from a previous life of the project. Nothing is referenced by the active codebase. Safe to browse, not safe to assume anything still works.
 
 ## prototypes/
-Old HTML prototypes and experimental JavaScript files from early development phases. These were used during iterative development but are superseded by the unified schema system.
-
-Files include:
-- Various HTML test pages and prototypes
-- Experimental JavaScript modules
-- Test harnesses and proof-of-concept code
+Old HTML experiments, test harnesses, early versions of the brane. Includes the original index.html, tab-mixing prototype, JACK-era versions, and various module test pages.
 
 ## old-docs/
-Old documentation files that have been replaced by the new schema documentation system:
-- SCHEMA-v1.1.md
-- START-HERE.md
-- INTEGRATION-GUIDE-SIMPLE.md
-- FILE-ARCHITECTURE.md
-- default-session.md
+Documentation from earlier phases — implementation instructions, cleanup guides, schema specs, integration guides, Gemini prompts, dev plans. All superseded by CLAUDE.md + SYSTEM-STATE.md + GitHub issues.
 
-These files are kept for historical reference but are no longer actively maintained.
+## deprecated/
+Dead libraries and modules (JACK bridge, OSC browser lib).
+
+## ui-design/
+The original UI element inventory spec. Now fully implemented as the tile system in tiles-config.json.
 
 ---
 
-**To restore any of these files:** Simply move them back to the project root directory.
+**To restore anything:** move it back to project root.
 
-**Archive created:** October 7, 2025
+**Archive created:** October 2025 | **Last updated:** March 2026
