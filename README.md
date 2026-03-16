@@ -44,11 +44,19 @@ The patterns on the membrane aren't generated for aesthetics. They emerge from t
 ## Running It
 
 ```bash
-# No build step — open directly in a browser
-open brane-with-collectors-websocket.html
+python3 -m http.server 8765
 ```
 
-Works in Chrome, Edge, Firefox. No server required for basic use.
+Then open `http://127.0.0.1:8765/brane-with-collectors-websocket.html` in Chrome.
+
+This is the preferred workflow now that the app is using local runtime assets. It avoids file-origin edge cases and keeps testing consistent with the VS Code task/launch setup.
+
+### Local Runtime Dependencies
+- `three.min.js` — Three.js renderer
+- `OrbitControls.js` — Three.js camera controls
+- `d3.v7.min.js` — D3 tile UI and drag system
+- `stats.min.js` — performance overlay
+- `soundfonts/` and `soundfonts/WebAudioFontPlayer.js` — local instrument assets currently parked for future work
 
 ### Audio Sources
 - **Tab capture** — capture audio from any browser tab
@@ -69,6 +77,8 @@ Works in Chrome, Edge, Firefox. No server required for basic use.
 | `brane-with-collectors-websocket.html` | Main application |
 | `membrane-physics-core.js` | Wave equation solver (do not modify) |
 | `tiles-config.json` | UI control configuration |
+| `d3.v7.min.js` | Local D3 runtime bundle |
+| `three.min.js` / `OrbitControls.js` | Local 3D runtime bundles |
 | `default-session.json` | Session state schema |
 | `src/` | Modular components (schema, audio, visual, controllers) |
 

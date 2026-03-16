@@ -4,6 +4,9 @@
   "editor.minimap.enabled": false,
   "editor.wordWrap": "off",
   "editor.formatOnSave": false,
+  "liveServer.settings.host": "127.0.0.1",
+  "liveServer.settings.port": 8765,
+  "liveServer.settings.root": "/",
   "search.exclude": {
     "**/archive/old-docs/**": true,
     "**/archive/prototypes/**": true,

@@ -7,6 +7,13 @@
       "request": "launch",
       "url": "http://127.0.0.1:8765/brane-with-collectors-websocket.html",
       "webRoot": "${workspaceFolder}"
+    },
+    {
+      "name": "Attach Chrome To rmix BAE",
+      "type": "pwa-chrome",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}"
     }
   ]
 }

@@ -11,6 +11,24 @@
         "8765"
       ],
       "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Open rmix BAE in Chrome",
+      "type": "shell",
+      "command": "open",
+      "args": [
+        "-a",
+        "Google Chrome",
+        "http://127.0.0.1:8765/brane-with-collectors-websocket.html"
+      ],
       "problemMatcher": []
     }
   ]
