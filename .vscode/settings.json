@@ -1,0 +1,27 @@
+{
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.minimap.enabled": false,
+  "editor.wordWrap": "off",
+  "editor.formatOnSave": false,
+  "search.exclude": {
+    "**/archive/old-docs/**": true,
+    "**/archive/prototypes/**": true,
+    "**/soundfonts/**": true
+  },
+  "files.watcherExclude": {
+    "**/soundfonts/**": true
+  },
+  "[html]": {
+    "editor.tabSize": 4
+  },
+  "[javascript]": {
+    "editor.tabSize": 4
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  }
+}

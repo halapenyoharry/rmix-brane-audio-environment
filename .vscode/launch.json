@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Open rmix BAE in Chrome",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:8765/brane-with-collectors-websocket.html",
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

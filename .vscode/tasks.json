@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Serve rmix BAE",
+      "type": "shell",
+      "command": "python3",
+      "args": [
+        "-m",
+        "http.server",
+        "8765"
+      ],
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
