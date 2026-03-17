@@ -68,8 +68,8 @@ class AudioSourceRouter {
         // Allocate buffers if needed
         const fftSize = source.analyserL.fftSize;
         if (!this.leftData || this.leftData.length !== fftSize) {
-            this.leftData = new Uint8Array(fftSize);
-            this.rightData = new Uint8Array(fftSize);
+            this.leftData = new Float32Array(fftSize);
+            this.rightData = new Float32Array(fftSize);
             this.bufferSize = fftSize;
         }
 
@@ -87,8 +87,8 @@ class AudioSourceRouter {
         const source = this.sources.get(this.activeSourceId);
         if (!source) return;
 
-        source.analyserL.getByteTimeDomainData(this.leftData);
-        source.analyserR.getByteTimeDomainData(this.rightData);
+        source.analyserL.getFloatTimeDomainData(this.leftData);
+        source.analyserR.getFloatTimeDomainData(this.rightData);
     }
 
     /**

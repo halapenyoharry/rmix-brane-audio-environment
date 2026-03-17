@@ -279,7 +279,7 @@
 
     <!-- Load D3.js for UI controls -->
     <script src="d3.v7.min.js"></script>
-    
+
     <script src="stats.min.js"></script>
     <script src="membrane-physics-core.js"></script>
     <script src="src/audio/MicrophoneInput.js"></script>
@@ -292,7 +292,7 @@
         // Initialize Mapping Engine
         const parser = new SchemaParser();
         let mapper = null;
-        
+
         // Load default session for visual mappings
         (async () => {
             try {
@@ -301,7 +301,7 @@
                 console.log("🎨 Visual Engine Loaded");
             } catch (e) {
                 console.warn("Using default visual mappings", e);
-                mapper = new MappingCurveEngine({}); 
+                mapper = new MappingCurveEngine({});
             }
         })();
 
@@ -483,7 +483,7 @@
 
         // Tab audio capture
         let tabAudioActive = false;
-        
+
         // Microphone Input
         let micInput = null;
         let micActive = false;
@@ -514,17 +514,17 @@
                 this.gain = 1.0;
                 this.visual = null;
                 this.demoPhase = Math.random() * Math.PI * 2;
-                
+
                 // Visual properties
                 this.currentAmplitude = 0;
                 this.baseSize = 2.0; // Visual radius
                 this.baseColor = new THREE.Color();
-                
+
                 // Assign mapped properties (random size for variety since we don't have drag-size yet)
                 // Use deterministic random based on position so it doesn't flicker on reload if we saved
                 const seed = Math.abs(x * y * 1000);
                 const randomSize = 15 + (seed % 35); // 15-50mm range
-                
+
                 if (mapper) {
                     const freq = mapper.sizeToFrequency(randomSize);
                     const hue = mapper.frequencyToColor(freq);
@@ -539,7 +539,7 @@
 
             apply() {
                 let force = 0;
-                
+
                 if (demoMode) {
                     // Demo sine waves
                     const time = Date.now() * 0.001;
@@ -561,7 +561,7 @@
                             sum += leftAudioData[i] + rightAudioData[i];
                         }
                         const avg = sum / (leftAudioData.length * 2);
-                        force = ((avg - 128) / 128) * window.actuatorGain;
+                        force = avg * window.actuatorGain;
                         audioData = null;  // Skip single-channel processing below
                     }
 
@@ -571,11 +571,11 @@
                             sum += audioData[i];
                         }
                         const avg = sum / audioData.length;
-                        // Convert audio sample to force: 128 = 0, 0 = -max, 255 = +max
-                        force = ((avg - 128) / 128) * window.actuatorGain;
+                        // Float domain: silence = 0.0, range [-1, 1]
+                        force = avg * window.actuatorGain;
                     }
                 }
-                
+
                 // Store amplitude for visual pulsing (smoothed)
                 const targetAmp = Math.abs(force);
                 this.currentAmplitude += (targetAmp - this.currentAmplitude) * 0.2;
@@ -609,7 +609,7 @@
                     }
                 }
             }
-            
+
             updateVisual() {
                 if (!this.visual) return;
 
@@ -815,8 +815,8 @@
                     rightAnalyser.fftSize = 256;
                     rightAnalyser.smoothingTimeConstant = 0.3;
 
-                    leftAudioData = new Uint8Array(leftAnalyser.fftSize);
-                    rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+                    leftAudioData = new Float32Array(leftAnalyser.fftSize);
+                    rightAudioData = new Float32Array(rightAnalyser.fftSize);
                 }
 
                 // Only create source once per element
@@ -859,11 +859,11 @@
             if (audioContext.state === 'suspended') {
                 await audioContext.resume();
             }
-            
+
             // Initialize mic helper if needed
             if (!micInput) {
                 micInput = new MicrophoneInput(audioContext);
-                
+
                 // If we already have analysers, use them
                 if (leftAnalyser && rightAnalyser) {
                     micInput.analyserL = leftAnalyser;
@@ -876,18 +876,18 @@
                     await micInput.start();
                     micActive = true;
                     audioEnabled = true;
-                    
+
                     // If we didn't have analysers before, grab them from micInput
                     // Note: MicrophoneInput.js will create them if we passed null
                     if (!leftAnalyser || !rightAnalyser) {
                         leftAnalyser = micInput.analyserL;
                         rightAnalyser = micInput.analyserR;
-                        
+
                         // Alloc buffers
-                        leftAudioData = new Uint8Array(leftAnalyser.frequencyBinCount);
-                        rightAudioData = new Uint8Array(rightAnalyser.frequencyBinCount);
+                        leftAudioData = new Float32Array(leftAnalyser.frequencyBinCount);
+                        rightAudioData = new Float32Array(rightAnalyser.frequencyBinCount);
                     }
-                    
+
                     console.log('Microphone input started');
                 } catch (e) {
                     console.error('Failed to start mic', e);
@@ -896,14 +896,14 @@
             } else {
                 micInput.stop();
                 micActive = false;
-                
+
                 // If no other audio sources, disable processing
                 if (!tabAudioActive && !audioFileMode && !demoMode) {
                     // audioEnabled = false; // Keep enabled to avoid glitching
                 }
                 console.log('Microphone input stopped');
             }
-            
+
             updateToggleStates();
         }
 
@@ -966,8 +966,8 @@
                 splitter.connect(leftAnalyser, 0);
                 splitter.connect(rightAnalyser, 1);
 
-                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
-                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+                leftAudioData = new Float32Array(leftAnalyser.fftSize);
+                rightAudioData = new Float32Array(rightAnalyser.fftSize);
 
                 audioStream = stream;
                 tabAudioActive = true;
@@ -1041,8 +1041,8 @@
                 rightAnalyser.fftSize = 256;
                 rightAnalyser.smoothingTimeConstant = 0.3;
 
-                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
-                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+                leftAudioData = new Float32Array(leftAnalyser.fftSize);
+                rightAudioData = new Float32Array(rightAnalyser.fftSize);
             }
 
             // Only create source once per loop element
@@ -1094,8 +1094,8 @@
                 rightAnalyser = audioContext.createAnalyser();
                 rightAnalyser.fftSize = 256;
                 rightAnalyser.smoothingTimeConstant = 0.3;
-                leftAudioData = new Uint8Array(leftAnalyser.fftSize);
-                rightAudioData = new Uint8Array(rightAnalyser.fftSize);
+                leftAudioData = new Float32Array(leftAnalyser.fftSize);
+                rightAudioData = new Float32Array(rightAnalyser.fftSize);
             }
 
             // Feed both analysers (mono source → both channels)
@@ -1222,8 +1222,8 @@
         // Update audio data from stereo channels
         function updateAudioData() {
             if (audioEnabled && leftAnalyser && rightAnalyser && leftAudioData && rightAudioData) {
-                leftAnalyser.getByteTimeDomainData(leftAudioData);
-                rightAnalyser.getByteTimeDomainData(rightAudioData);
+                leftAnalyser.getFloatTimeDomainData(leftAudioData);
+                rightAnalyser.getFloatTimeDomainData(rightAudioData);
             }
         }
 
@@ -1355,7 +1355,7 @@
             physics.waveSpeed = Number(window.waveSpeed);
             physics.damping = Number(window.damping);
             window.actuatorGain = Number(window.actuatorGain);
-            
+
             // Step physics simulation
             physics.updatePhysics();
 
