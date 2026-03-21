@@ -43,32 +43,44 @@ The patterns on the membrane aren't generated for aesthetics. They emerge from t
 
 ## Running It
 
+### Docker (easiest — works on any machine with Docker)
+
+```bash
+docker compose up -d
+```
+
+Open `http://localhost:48000` — that's it. Port 48000 is a nod to the 48kHz audio sample rate.
+
+To share it on your local network, other devices can reach it at `http://<your-machine-ip>:48000`.
+
+To stop it:
+
+```bash
+docker compose down
+```
+
+### Without Docker
+
 ```bash
 python3 -m http.server 8765
 ```
 
-Then open `http://127.0.0.1:8765/brane-with-collectors-websocket.html` in Chrome.
+Open `http://127.0.0.1:8765/brane-with-collectors-websocket.html` in Chrome or Firefox.
 
-This is the preferred workflow now that the app is using local runtime assets. It avoids file-origin edge cases and keeps testing consistent with the VS Code task/launch setup.
-
-### Local Runtime Dependencies
-- `three.min.js` — Three.js renderer
-- `OrbitControls.js` — Three.js camera controls
-- `d3.v7.min.js` — D3 tile UI and drag system
-- `stats.min.js` — performance overlay
-- `soundfonts/` and `soundfonts/WebAudioFontPlayer.js` — local instrument assets currently parked for future work
+The app must be served over HTTP — `file://` won't work due to ES module and Web Audio API restrictions.
 
 ### Audio Sources
-- **Tab capture** — capture audio from any browser tab
+- **Tab capture** — capture audio from any browser tab (Chrome/Edge)
 - **Microphone** — system audio input
-- **Audio files** — drag or load MP3/WAV
-- **Demo loops** — built-in test audio (bass, drums, kick, snare)
+- **Audio files** — load MP3/WAV
+- **Demo loops** — built-in test loops (bass, drums, kick, snare)
+- **Keyboard** — play notes directly, audio feeds through manually placed actuators
 
 ### Controls
 - Click on membrane to add an actuator
 - Shift+Click to add a collector
-- Drag controls to reposition
-- Sliders for wave speed, damping, gain, grid resolution
+- Drag control tiles to reposition
+- Sliders for wave speed, damping, gain
 
 ## Architecture
 
@@ -77,10 +89,18 @@ This is the preferred workflow now that the app is using local runtime assets. I
 | `brane-with-collectors-websocket.html` | Main application |
 | `membrane-physics-core.js` | Wave equation solver (do not modify) |
 | `tiles-config.json` | UI control configuration |
+| `default-session.json` | Session state schema |
+| `src/pod-runtime.js` | Pod system — modular runtime controls |
+| `src/pods/` | Individual control pods (sliders, keyboard) |
+| `src/schema/SchemaParser.js` | Session JSON loader/validator |
 | `d3.v7.min.js` | Local D3 runtime bundle |
 | `three.min.js` / `OrbitControls.js` | Local 3D runtime bundles |
-| `default-session.json` | Session state schema |
-| `src/` | Modular components (schema, audio, visual, controllers) |
+| `Dockerfile` / `docker-compose.yml` | One-command container deployment |
+| `research/` | Architecture notes, design decisions, physics exploration |
+
+## License
+
+AGPLv3. Free to use and modify. If you deploy a modified version as a network service, you must publish your source changes under the same license. See [LICENSE](LICENSE).
 
 ## Philosophy
 
