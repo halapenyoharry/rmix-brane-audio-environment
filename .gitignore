@@ -26,6 +26,36 @@ temp/
 .consciousness-topology-navigation-graph.json
 .claude/
 sessions/
+CLAUDE.md
+SYSTEM-STATE.md
+GEMINI-PROMPT.md
+
+# Session / state files
+default-session.json
+default-session.md
+
+# Internal dev instructions (not for public)
+CLEANUP-INSTRUCTIONS.md
+CLEANUP-PROMPT.txt
+FILE-ARCHITECTURE.md
+IMPLEMENTATION-INSTRUCTIONS.md
+IMPLEMENTATION-INSTRUCTIONS-PART2.md
+INTEGRATION-GUIDE-SIMPLE.md
+PHASE-1-COMPLETE.md
+SCHEMA-v1.1.md
+START-HERE.md
+
+# Editor workspace files
+*.code-workspace
+
+# Test harnesses (not part of the app)
+test-*.html
+
+# Old standalone demos
+actuator-coupling-demo.html
+
+# Design docs
+ui-design/
 
 # Inbox (unsorted scratch files)
 inbox/
