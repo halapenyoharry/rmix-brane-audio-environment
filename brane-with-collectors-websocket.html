@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Audio-Reactive Membrane - Fixed</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400&display=swap" crossorigin="anonymous">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400&display=swap');
-
         * {
             margin: 0;
             padding: 0;
@@ -280,10 +279,11 @@
     <script src="OrbitControls.js"></script>
 
     <!-- Load D3.js for UI controls -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
 
     <script src="stats.min.js"></script>
     <script src="membrane-physics-core.js"></script>
+    <script src="src/audio/membrane-worklet-node.js"></script>
     <script src="src/audio/MicrophoneInput.js"></script>
     <script src="src/schema/SchemaParser.js"></script>
     <script src="src/visual/MappingCurveEngine.js"></script>
@@ -452,6 +452,85 @@
             boundaryType: 'fixed'
         });
 
+        // ── AudioWorklet Physics ──────────────────────────────────────
+        // When active, the worklet owns the physics simulation at audio rate.
+        // Main thread only reads height snapshots for rendering.
+        let membraneWorklet = null;
+        let workletSnapshot = null; // Float32Array from worklet, flat layout
+        let workletGridSize = 32;   // Worklet runs at smaller grid; GPU upsamples for visuals
+
+        /**
+         * Initialize the AudioWorklet physics engine.
+         * Call once after audioContext exists.
+         */
+        async function initWorklet() {
+            if (membraneWorklet) return;
+            if (!audioContext) return;
+
+            try {
+                membraneWorklet = new MembraneWorkletNode(audioContext, {
+                    gridSize: workletGridSize,
+                    waveSpeed: Number(window.waveSpeed),
+                    damping: Number(window.damping),
+                    actuatorGain: Number(window.actuatorGain),
+                    boundaryType: 'fixed',
+                    collectorCount: 2
+                });
+
+                await membraneWorklet.init();
+
+                // Receive height snapshots for rendering
+                membraneWorklet.onSnapshot = (snapshot) => {
+                    workletSnapshot = snapshot;
+                };
+
+                // Sync any existing actuators/collectors
+                syncActuatorsToWorklet();
+                syncCollectorsToWorklet();
+
+                console.log(`AudioWorklet physics initialized (${workletGridSize}x${workletGridSize} grid at ${audioContext.sampleRate}Hz)`);
+            } catch (err) {
+                console.error('AudioWorklet init failed, falling back to main-thread physics:', err);
+                membraneWorklet = null;
+            }
+        }
+
+        /**
+         * Connect an audio source node to the worklet input.
+         * The source's stereo channels map to actuator L/R assignments.
+         */
+        function connectSourceToWorklet(sourceNode) {
+            if (!membraneWorklet || !membraneWorklet.node) return;
+            sourceNode.connect(membraneWorklet.node);
+        }
+
+        /**
+         * Send current actuator positions to the worklet.
+         */
+        function syncActuatorsToWorklet() {
+            if (!membraneWorklet) return;
+            const scale = workletGridSize / gridSize; // Map from render grid to worklet grid
+            membraneWorklet.setActuators(actuators.map(a => ({
+                gridX: Math.round(a.gridX * scale),
+                gridY: Math.round(a.gridY * scale),
+                radius: Math.max(1, Math.round(a.baseSize * 1.5 * scale)),
+                channel: a.channel
+            })));
+        }
+
+        /**
+         * Send current collector positions to the worklet.
+         */
+        function syncCollectorsToWorklet() {
+            if (!membraneWorklet) return;
+            const scale = workletGridSize / gridSize;
+            membraneWorklet.setCollectors(collectors.map(c => ({
+                gridX: Math.round(c.gridX * scale),
+                gridY: Math.round(c.gridY * scale),
+                mode: c.mode
+            })));
+        }
+
         // Initialize UI variables on window for D3 binding
         window.waveSpeed = physics.waveSpeed;
         window.damping = physics.damping;
@@ -485,6 +564,10 @@
 
         // Tab audio capture
         let tabAudioActive = false;
+
+        // Demo oscillator for worklet path
+        let demoOscillator = null;
+        let demoOscGain = null;
 
         // Microphone Input
         let micInput = null;
@@ -682,6 +765,7 @@
         // Helper functions for membrane operations
         function resetMembrane() {
             initializeArrays();
+            if (membraneWorklet) membraneWorklet.reset();
         }
 
         // Toggle wireframe — one job
@@ -705,6 +789,9 @@
             // Rebuild physics at new resolution (clears state)
             physics.setGridSize(gridSize);
 
+            // Note: worklet grid stays at workletGridSize (independent resolution)
+            // Bilinear upsampling in updatePhysics() handles the mismatch
+
             // Clear actuators/collectors — their grid coords are now stale
             clearActuators();
             clearCollectors();
@@ -716,6 +803,7 @@
             });
             actuators = [];
             updateMiniMembrane();
+            syncActuatorsToWorklet();
         }
 
         function clearCollectors() {
@@ -724,6 +812,7 @@
             });
             collectors = [];
             updateMiniMembrane();
+            syncCollectorsToWorklet();
         }
 
         // Audio control wrappers for tiles
@@ -753,6 +842,7 @@
             actuator.visual = indicator;
 
             updateMiniMembrane();
+            syncActuatorsToWorklet();
             return actuator;
         }
 
@@ -777,6 +867,7 @@
             collector.visual = indicator;
 
             updateMiniMembrane();
+            syncCollectorsToWorklet();
             console.log(`Added collector at (${x.toFixed(1)}, ${y.toFixed(1)}) - ${config.channel || 'mono'} - ${config.mode || 'velocity'}`);
             return collector;
         }
@@ -831,6 +922,9 @@
 
                     splitter.connect(leftAnalyser, 0);
                     splitter.connect(rightAnalyser, 1);
+
+                    // Route to worklet for physics
+                    initWorklet().then(() => connectSourceToWorklet(audioElementSource));
                 }
 
                 // Load new file
@@ -887,6 +981,12 @@
                         // Alloc buffers
                         leftAudioData = new Float32Array(leftAnalyser.frequencyBinCount);
                         rightAudioData = new Float32Array(rightAnalyser.frequencyBinCount);
+                    }
+
+                    // Route mic source to worklet for physics
+                    if (micInput.sourceNode) {
+                        await initWorklet();
+                        connectSourceToWorklet(micInput.sourceNode);
                     }
 
                     console.log('Microphone input started');
@@ -969,6 +1069,10 @@
 
                 leftAudioData = new Float32Array(leftAnalyser.fftSize);
                 rightAudioData = new Float32Array(rightAnalyser.fftSize);
+
+                // Route to worklet for physics
+                await initWorklet();
+                connectSourceToWorklet(source);
 
                 audioStream = stream;
                 tabAudioActive = true;
@@ -1057,6 +1161,9 @@
 
                 splitter.connect(leftAnalyser, 0);
                 splitter.connect(rightAnalyser, 1);
+
+                // Route to worklet for physics
+                initWorklet().then(() => connectSourceToWorklet(loopAudioSource));
             }
 
             // Load new loop file
@@ -1102,6 +1209,9 @@
             // Feed both analysers (mono source → both channels)
             keyboardGainNode.connect(leftAnalyser);
             keyboardGainNode.connect(rightAnalyser);
+
+            // Route to worklet for physics
+            initWorklet().then(() => connectSourceToWorklet(keyboardGainNode));
         }
 
         function midiToFreq(pitch) {
@@ -1287,6 +1397,17 @@
                 return;
             }
 
+            // ── Worklet path: collectors are already output channels ──
+            if (membraneWorklet && membraneWorklet.node) {
+                // Worklet output channels ARE the collector signals at audio rate.
+                // Just connect the worklet output to destination (uses audioContext, not separate outputContext)
+                membraneWorklet.connectOutput(audioContext.destination);
+                audioOutputEnabled = true;
+                console.log('Audio output enabled via worklet (sample-accurate collectors)');
+                return;
+            }
+
+            // ── Fallback: ScriptProcessor for main-thread physics ─────
             if (!outputContext) {
                 outputContext = new (window.AudioContext || window.webkitAudioContext)();
             }
@@ -1338,6 +1459,10 @@
         }
 
         function stopAudioOutput() {
+            // Disconnect worklet output if active
+            if (membraneWorklet && membraneWorklet.node) {
+                try { membraneWorklet.node.disconnect(audioContext.destination); } catch(e) {}
+            }
             if (outputProcessor) {
                 outputProcessor.disconnect();
                 outputProcessor = null;
@@ -1357,18 +1482,71 @@
             physics.damping = Number(window.damping);
             window.actuatorGain = Number(window.actuatorGain);
 
-            // Step physics simulation
-            physics.updatePhysics();
+            // Forward parameter changes to worklet
+            if (membraneWorklet) {
+                membraneWorklet.setWaveSpeed(physics.waveSpeed);
+                membraneWorklet.setDamping(physics.damping);
+                membraneWorklet.setActuatorGain(window.actuatorGain);
+            }
 
-            // Setup for visualization
-            const heights = physics.heights;
             const positions = membrane.geometry.attributes.position.array;
+            const waveH = material.uniforms.waveHeight.value;
 
-            // Update geometry from physics simulation
-            for (let i = 0; i <= gridSize; i++) {
-                for (let j = 0; j <= gridSize; j++) {
-                    const index = (i * (gridSize + 1) + j) * 3 + 2;
-                    positions[index] = heights[i][j] * material.uniforms.waveHeight.value;
+            if (membraneWorklet && workletSnapshot) {
+                // ── Worklet path: render from snapshot ─────────────────
+                // workletSnapshot is flat Float32Array from worklet grid (workletGridSize+1)²
+                // Render grid may be larger — bilinear upsample
+                const ws = workletGridSize;
+                const wStride = ws + 1;
+                const rs = gridSize;
+                const rStride = rs + 1;
+
+                if (ws === rs) {
+                    // Same resolution — direct copy
+                    for (let i = 0; i <= rs; i++) {
+                        for (let j = 0; j <= rs; j++) {
+                            const posIdx = (i * rStride + j) * 3 + 2;
+                            positions[posIdx] = workletSnapshot[i * wStride + j] * waveH;
+                        }
+                    }
+                } else {
+                    // Bilinear upsample from worklet grid to render grid
+                    const scale = ws / rs;
+                    for (let i = 0; i <= rs; i++) {
+                        for (let j = 0; j <= rs; j++) {
+                            const fi = i * scale;
+                            const fj = j * scale;
+                            const i0 = Math.min(Math.floor(fi), ws - 1);
+                            const j0 = Math.min(Math.floor(fj), ws - 1);
+                            const i1 = Math.min(i0 + 1, ws);
+                            const j1 = Math.min(j0 + 1, ws);
+                            const ti = fi - i0;
+                            const tj = fj - j0;
+
+                            const h00 = workletSnapshot[i0 * wStride + j0];
+                            const h10 = workletSnapshot[i1 * wStride + j0];
+                            const h01 = workletSnapshot[i0 * wStride + j1];
+                            const h11 = workletSnapshot[i1 * wStride + j1];
+
+                            const h = (1 - ti) * (1 - tj) * h00 +
+                                      ti * (1 - tj) * h10 +
+                                      (1 - ti) * tj * h01 +
+                                      ti * tj * h11;
+
+                            const posIdx = (i * rStride + j) * 3 + 2;
+                            positions[posIdx] = h * waveH;
+                        }
+                    }
+                }
+            } else {
+                // ── Fallback: main-thread physics ──────────────────────
+                physics.updatePhysics();
+                const heights = physics.heights;
+                for (let i = 0; i <= gridSize; i++) {
+                    for (let j = 0; j <= gridSize; j++) {
+                        const index = (i * (gridSize + 1) + j) * 3 + 2;
+                        positions[index] = heights[i][j] * waveH;
+                    }
                 }
             }
 
@@ -1397,6 +1575,7 @@
                         scene.remove(actuators[i].visual);
                         actuators.splice(i, 1);
                         updateMiniMembrane();
+                        syncActuatorsToWorklet();
                         clickedSphere = true;
                         break;
                     }
@@ -1412,6 +1591,7 @@
                             scene.remove(collectors[i].visual);
                             collectors.splice(i, 1);
                             updateMiniMembrane();
+                            syncCollectorsToWorklet();
                             clickedSphere = true;
                             break;
                         }
@@ -1439,6 +1619,55 @@
             }
         });
 
+        // ── Demo Mode ───────────────────────────────────────────────
+        function toggleDemo() {
+            demoMode = !demoMode;
+
+            if (demoMode) {
+                audioEnabled = false;
+                audioFileMode = false;
+                if (audioElement) audioElement.pause();
+
+                // Start demo oscillator for worklet input
+                startDemoOscillator();
+            } else {
+                stopDemoOscillator();
+            }
+            updateAudioToggles();
+        }
+
+        function startDemoOscillator() {
+            if (demoOscillator) return; // already running
+            if (!membraneWorklet) return; // no worklet — fallback path uses Actuator.apply()
+
+            if (!audioContext) audioContext = new AudioContext();
+
+            demoOscGain = audioContext.createGain();
+            demoOscGain.gain.value = 0.4;
+
+            demoOscillator = audioContext.createOscillator();
+            demoOscillator.type = 'sine';
+            demoOscillator.frequency.value = 2.0; // 2 Hz — slow sweep, same as before
+            demoOscillator.connect(demoOscGain);
+
+            // Route oscillator to worklet input
+            connectSourceToWorklet(demoOscGain);
+
+            demoOscillator.start();
+        }
+
+        function stopDemoOscillator() {
+            if (demoOscillator) {
+                demoOscillator.stop();
+                demoOscillator.disconnect();
+                demoOscillator = null;
+            }
+            if (demoOscGain) {
+                demoOscGain.disconnect();
+                demoOscGain = null;
+            }
+        }
+
         // Keyboard controls
         document.addEventListener('keydown', async (e) => {
             // Shift+H to toggle controls
@@ -1461,17 +1690,7 @@
                 // Load audio file
                 initAudioFile();
             } else if (e.key === 'd' || e.key === 'D') {
-                // Toggle demo mode
-                demoMode = !demoMode;
-
-                if (demoMode) {
-                    audioEnabled = false;
-                    audioFileMode = false;
-                    if (audioElement) {
-                        audioElement.pause();
-                    }
-                }
-                updateAudioToggles();
+                toggleDemo();
             } else if (e.key === 'r' || e.key === 'R') {
                 resetMembrane();
             } else if (e.key === 'c' || e.key === 'C') {
@@ -1524,20 +1743,23 @@
             stats.begin();
             requestAnimationFrame(animate);
 
-            // Update audio data
+            // Update audio data (for visualizers + fallback actuators)
             updateAudioData();
 
             // Update audio visualizers on tiles
             updateAudioVisualizers();
 
-            // Apply actuators
-            actuators.forEach(actuator => {
-                actuator.apply();
-            });
+            // Apply actuators on main thread only when worklet is NOT active
+            // (when worklet runs, audio flows directly into physics via input channels)
+            if (!membraneWorklet) {
+                actuators.forEach(actuator => {
+                    actuator.apply();
+                });
+            }
 
             updatePhysics();
 
-            // Collectors sample automatically in audio processor callback
+            // Collectors sample automatically in worklet or ScriptProcessor callback
 
             material.uniforms.time.value = Date.now() * 0.001;
 
@@ -1720,8 +1942,7 @@
                         stopTabAudio();
                     }
                 } else if (tileData.action === 'toggleDemo') {
-                    demoMode = !demoMode;
-                    if (demoMode) audioEnabled = false;
+                    toggleDemo();
                 } else if (tileData.action === 'toggleWireframe') {
                     toggleWireframe();
                 }
