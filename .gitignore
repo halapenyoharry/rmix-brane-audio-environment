@@ -20,3 +20,18 @@ npm-debug.log*
 # Temporary files
 *.tmp
 .cache/
+temp/
+
+# Private / internal AI session artifacts
+.consciousness-topology-navigation-graph.json
+.claude/
+sessions/
+
+# Inbox (unsorted scratch files)
+inbox/
+
+# Old pre-refactor dev notes (internal only)
+old/
+
+# Node
+node_modules/

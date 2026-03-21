@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Actuator Coupling: Mallet vs Driver</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0e27;
+            color: #c0c8e0;
+            font-family: monospace;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            text-align: center;
+            padding: 12px;
+            font-size: 13px;
+            color: #607090;
+            border-bottom: 1px solid #1a2040;
+        }
+        .scenes {
+            display: flex;
+            flex: 1;
+        }
+        .scene {
+            flex: 1;
+            position: relative;
+            border-right: 1px solid #1a2040;
+        }
+        .scene:last-child { border-right: none; }
+        .scene-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 14px;
+            color: #00e5ff;
+            z-index: 1;
+        }
+        .scene-desc {
+            position: absolute;
+            top: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: #506080;
+            white-space: nowrap;
+            z-index: 1;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 12px;
+            border-top: 1px solid #1a2040;
+            font-size: 12px;
+        }
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .controls input[type="range"] {
+            width: 100px;
+        }
+        .signal-display {
+            color: #ffcc00;
+            min-width: 80px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">Actuator Coupling — Left: Mallet (collision) / Right: Driver (Glue coupling)</div>
+    <div class="scenes">
+        <div class="scene">
+            <div class="scene-label">MALLET (uncoupled)</div>
+            <div class="scene-desc">one-way collision — membrane free when ball lifts</div>
+            <canvas id="mallet-canvas"></canvas>
+        </div>
+        <div class="scene">
+            <div class="scene-label">DRIVER (coupled)</div>
+            <div class="scene-desc">glue coupling — membrane IS the ball surface</div>
+            <canvas id="driver-canvas"></canvas>
+        </div>
+    </div>
+    <div class="controls">
+        <label>
+            signal freq
+            <input type="range" id="freq-slider" min="0.05" max="8" step="0.01" value="0.1">
+            <span id="freq-val">0.10 Hz</span>
+        </label>
+        <label>
+            signal amp
+            <input type="range" id="amp-slider" min="0" max="40" step="1" value="40">
+            <span id="amp-val">40</span>
+        </label>
+        <label>
+            actuator width
+            <input type="range" id="width-slider" min="4" max="30" step="1" value="30">
+            <span id="width-val">30</span>
+        </label>
+        <div class="signal-display" id="signal-display">signal: 0.00</div>
+    </div>
+
+    <script type="module">
+    import { createMembrane, stepMembrane } from './membrane-1d.js';
+    import { sphereFootprint } from './actuator-sphere.js';
+    import { applyCollision } from './coupling-collision.js';
+    import { applyGlue } from './coupling-glue.js';
+
+    // --- Physics parameters ---
+    const N = 200;
+    const dt = 0.4;
+    const waveSpeed = 0.3;
+    const damping = 0.005;
+    const stepsPerFrame = 3;
+
+    // --- Controls ---
+    const freqSlider = document.getElementById('freq-slider');
+    const ampSlider = document.getElementById('amp-slider');
+    const widthSlider = document.getElementById('width-slider');
+    const freqVal = document.getElementById('freq-val');
+    const ampVal = document.getElementById('amp-val');
+    const widthVal = document.getElementById('width-val');
+    const signalDisplay = document.getElementById('signal-display');
+
+    freqSlider.addEventListener('input', () => freqVal.textContent = parseFloat(freqSlider.value).toFixed(2) + ' Hz');
+    ampSlider.addEventListener('input', () => ampVal.textContent = ampSlider.value);
+    widthSlider.addEventListener('input', () => widthVal.textContent = widthSlider.value);
+
+    // --- State ---
+    const malletMem = createMembrane(N);
+    const driverMem = createMembrane(N);
+    const actuatorX = Math.floor(N / 2);
+
+    const malletCanvas = document.getElementById('mallet-canvas');
+    const malletCtx = malletCanvas.getContext('2d');
+    const driverCanvas = document.getElementById('driver-canvas');
+    const driverCtx = driverCanvas.getContext('2d');
+
+    // --- Rendering ---
+    function resizeCanvas(canvas) {
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * devicePixelRatio;
+        canvas.height = rect.height * devicePixelRatio;
+    }
+
+    function drawScene(ctx, canvas, mem, footprint, signal, radius, mode) {
+        const w = canvas.width;
+        const h = canvas.height;
+        const midY = h * 0.55;
+        const scaleX = w / N;
+        const scaleY = scaleX; // same scale for both axes — a circle is a circle
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Rest line
+        ctx.strokeStyle = '#1a2040';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, midY);
+        ctx.lineTo(w, midY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Actuator — full circle, drawn behind membrane
+        if (footprint.indices.length > 0) {
+            const cx = actuatorX * scaleX;
+            const ballRadius = radius * scaleX;
+            const ballCenterY = midY - signal * scaleY;
+
+            ctx.beginPath();
+            ctx.arc(cx, ballCenterY, ballRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 68, 102, 0.6)';
+            ctx.fill();
+        }
+
+        // Membrane — drawn on top
+        ctx.strokeStyle = '#4488ff';
+        ctx.lineWidth = 2 * devicePixelRatio;
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+            const x = i * scaleX;
+            const y = midY - mem.heights[i] * scaleY;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Contact dots (mallet only) — drawn on top of membrane
+        if (footprint.indices.length > 0 && mode === 'collision') {
+            ctx.fillStyle = '#ffcc00';
+            for (let j = 0; j < footprint.indices.length; j++) {
+                const i = footprint.indices[j];
+                const surfaceHeight = footprint.heights[j];
+                if (Math.abs(mem.heights[i] - surfaceHeight) < 0.5) {
+                    const px = i * scaleX;
+                    const py = midY - mem.heights[i] * scaleY;
+                    ctx.beginPath();
+                    ctx.arc(px, py, 2 * devicePixelRatio, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Signal indicator
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(8, midY);
+        ctx.lineTo(8, midY - signal * scaleY);
+        ctx.stroke();
+        const tipY = midY - signal * scaleY;
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath();
+        ctx.moveTo(4, tipY);
+        ctx.lineTo(12, tipY);
+        ctx.lineTo(8, signal > 0 ? tipY - 5 : tipY + 5);
+        ctx.fill();
+    }
+
+    // --- Main loop ---
+    function resize() {
+        resizeCanvas(malletCanvas);
+        resizeCanvas(driverCanvas);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(() => resize());
+
+    function animate(now) {
+        requestAnimationFrame(animate);
+
+        if (malletCanvas.width !== Math.round(malletCanvas.getBoundingClientRect().width * devicePixelRatio)) {
+            resize();
+        }
+
+        const freq = parseFloat(freqSlider.value);
+        const amp = parseFloat(ampSlider.value);
+        const actuatorWidth = parseFloat(widthSlider.value);
+        const t = now * 0.001;
+
+        // Signal and its derivative
+        const signal = Math.sin(t * freq * Math.PI * 2) * amp;
+        const signalVelocity = Math.cos(t * freq * Math.PI * 2) * amp * freq * Math.PI * 2;
+        signalDisplay.textContent = 'signal: ' + signal.toFixed(2);
+
+        const radius = actuatorWidth / 2;
+
+        // Step physics
+        for (let s = 0; s < stepsPerFrame; s++) {
+            const malletFoot = sphereFootprint(signal, radius, actuatorX, N, 0);
+            applyCollision(malletMem, malletFoot);
+            stepMembrane(malletMem, waveSpeed, damping, dt);
+
+            const driverFoot = sphereFootprint(signal, radius, actuatorX, N, signalVelocity);
+            applyGlue(driverMem, driverFoot);
+            stepMembrane(driverMem, waveSpeed, damping, dt);
+        }
+
+        // Draw (compute footprints once more for rendering)
+        const malletFootRender = sphereFootprint(signal, radius, actuatorX, N, 0);
+        const driverFootRender = sphereFootprint(signal, radius, actuatorX, N, signalVelocity);
+
+        drawScene(malletCtx, malletCanvas, malletMem, malletFootRender, signal, radius, 'collision');
+        drawScene(driverCtx, driverCanvas, driverMem, driverFootRender, signal, radius, 'glue');
+    }
+
+    requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+services:
+  brane:
+    build: .
+    ports:
+      - "48000:80"
+    restart: unless-stopped
