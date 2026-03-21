@@ -26,6 +26,7 @@ temp/
 .consciousness-topology-navigation-graph.json
 .claude/
 sessions/
+.consciousness-topology-navigation-graph.json
 
 # Inbox (unsorted scratch files)
 inbox/
