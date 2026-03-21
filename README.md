@@ -1,5 +1,7 @@
 # rmix-BAE (Brane Audio Environment)
 
+![Membrane responding to audio](assets/demo.jpg)
+
 A web-based audio processor that uses actual 2D membrane physics for sound transformation. Not a traditional reverb or visualizer — this physically models the actuator-membrane-microphone chain using wave equations.
 
 ## The Physics
