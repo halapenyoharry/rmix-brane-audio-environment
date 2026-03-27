@@ -364,157 +364,191 @@ Current limitation:
 
 ---
 
-## 5. What Is Still Not Done
+## 5. Correction: Pod Runtime Was Never Integrated (2026-03-27)
 
-The architecture contract is still not fully implemented, but the system is no
-longer in early Phase 1. Runtime seams and a working pod runtime now exist.
+**Sections 4.4, 4.5, and 4.7 above describe work that exists in source files
+but was never wired into the live application.**
 
-Not yet done:
+The pod runtime (`src/pod-runtime.js`), the slider pods (`src/pods/*.pod.js`),
+and the session-backed persistence were designed for a pre-worklet architecture.
+The monolith (`brane-with-collectors-websocket.html`) never imported or
+instantiated the pod runtime. No pod `update()` or `render()` calls exist in
+the animation loop. The monolith continued to use legacy tiles from
+`tiles-config.json` with `window[variable] = value` as the entire parameter
+model throughout.
 
-- No fixed-step simulation loop yet
-- No Worker-owned membrane state yet
-- No AudioWorklet-owned audio path yet
-- No latency measurement harness yet
-- No full hot-path allocation audit yet
+These files remain in the repo as reference material for a future pod system
+redesign. They are not integration targets.
 
-Still structurally messy:
+The `runtimeParameterStore`, `getControlValue()`, and `setControlValue()`
+described in section 4.1 were similarly never the live parameter path. The
+monolith read `window.waveSpeed` etc. directly until the ParamBus integration
+on 2026-03-27 (see section 6 below).
 
-- Collectors still read membrane state directly.
-- Actuator and collector grid coordinates are still cached derived state.
-- Tile layout is still not inside the session boundary.
-- Audio source, microphone, file player, and visualizer tiles are still on the
-  legacy side of the shell.
-
----
-
-## 6. Current Migration Status
-
-### Completed
-
-- Contract written
-- Pod architecture specification expanded
-- State ownership inventory written
-- GitHub issue planning documents written
-- Runtime parameter store introduced
-- Force gateway introduced
-- Audio source registry introduced
-- Legacy source-state booleans removed
-- Pod runtime implemented
-- Parameter slider pods implemented and mounted
-- Dynamic grid slider deleted
-- Session-backed persistence added for the active pod set
-- Keyboard restored as a pure audio source
-- Manually placed actuators remain the only membrane-coupling points
-
-### In Progress
-
-- Replacing remaining monolith-owned control paths with runtime-owned seams
-- Reducing remaining derived-state and persistence-boundary violations
-- Tightening the source/actuator contract around the final signal chain
-
-### Not Started in Code
-
-- Session-backed pod persistence
-- Time decoupling
-- Thread isolation
-- AudioWorklet migration
-- Latency instrumentation
+The force gateway described in section 4.2 was superseded by glue coupling
+in the AudioWorklet (see section 6.1).
 
 ---
 
-## 7. Recommended Next Steps
+## 6. AudioWorklet Era (2026-03-21 → 2026-03-27)
 
-The next work should continue to narrow ambiguity before introducing Workers or
-audio-rate architecture.
+The architecture took a significant turn when the physics engine moved from
+main-thread JavaScript into an AudioWorklet running at sample rate (48kHz).
+This leapfrogged Phases 4 and 5 of the original migration plan.
 
-### Immediate Next Step
+### 6.1 AudioWorklet Physics Engine (commit 8d5d32b, 2026-03-21)
 
-Verify the restored keyboard-to-manual-actuator behavior in a real browser
-session.
+Locations:
 
-Specifically:
+- `src/audio/membrane-worklet-processor.js` (worklet thread)
+- `src/audio/membrane-worklet-node.js` (main thread wrapper)
+- `brane-with-collectors-websocket.html` (integration)
 
-1. Confirm keyboard input does nothing unless at least one actuator is manually
-  placed.
-2. Confirm manually placed actuators respond to keyboard audio.
-3. Confirm deleting a manual actuator stops its response and does not cause the
-  runtime to recreate a hidden replacement.
-4. Confirm pod position and slider values still round-trip through
-  `serializeSessionState()`.
+What changed:
 
-Why this is next:
+- The wave equation now runs at audio sample rate inside an AudioWorklet.
+- The main-thread physics path (`membrane-physics-core.js`) is retained as a
+  fallback but is no longer the primary engine.
+- The worklet owns heights, velocities, and the Laplacian computation.
+- Snapshots of membrane state are sent to the main thread at display refresh
+  rate via `postMessage`.
 
-- The structural correction is in place.
-- The remaining risk is behavioral integration between keyboard source output,
-  manual actuators, and persistence.
+### 6.2 Glue-Coupled Actuators (commit 5f5e2ca, 2026-03-27)
 
-### After That
+What changed:
 
-Extend persistence and source contracts beyond the current pod set.
+- Replaced the Gaussian force-injection model with geometric glue coupling.
+- Actuator sphere surfaces enforce membrane height at contact points
+  (Dirichlet boundary conditions).
+- Waves radiate naturally from footprint edges via the Laplacian.
+- The force gateway from section 4.2 is no longer the coupling mechanism.
 
-Recommended order:
+### 6.3 Display Smoothing and Adaptive Snapshot Rate (commit 5f5e2ca)
 
-1. Persist the remaining relevant UI layout state
-2. Clarify source contract handling for keyboard versus file/mic/tab sources
-3. Keep collapsing legacy shell behavior into explicit runtime-owned seams
+What changed:
 
-Why this is next:
+- Per-sample exponential low-pass filter on display heights (rendering layer).
+- Audio output remains raw/unsmoothed (physics layer).
+- Snapshot rate adapts to actual monitor refresh rate via `requestAnimationFrame`
+  timing.
+- Smoothing factor scales inversely with wave speed (adaptive), overridable
+  via manual slider.
 
-- The current pod boundary is now real.
-- The next gap is consistency across the remaining non-pod subsystems.
+### 6.4 ParamBus: Single Parameter Authority (commit e3122bb, 2026-03-27)
 
-### Later Phases
+Locations:
 
-Only after the above is real:
+- `src/core/param-bus.js` (new ES module)
+- `brane-with-collectors-websocket.html` (integration)
 
-1. Move simulation to a fixed-step loop
-2. Add render interpolation
-3. Move membrane state into a Worker
-4. Move audio-rate work into an AudioWorklet
-5. Measure latency and audit hot-path allocations
+What changed:
+
+- `ParamBus` class introduced as the sole owner of membrane parameters:
+  `membrane_wave_speed`, `membrane_damping`, `membrane_actuator_gain`,
+  `display_smoothing`.
+- Imported into the monolith via a `<script type="module">` wrapper that
+  exposes `window.paramBus`.
+- Legacy sliders write to both `window[variable]` (bridge) and
+  `paramBus.set()` (authority).
+- `updatePhysics()` reads from ParamBus with dirty-checking — worklet only
+  receives messages when values actually change.
+- Freeze button reads/writes through ParamBus.
+- Worklet initialization reads from ParamBus.
+- `syncFromWindowGlobals()` runs once at boot to capture legacy slider defaults.
+- `syncToWindowGlobals()` runs each frame as a legacy bridge (to be removed
+  when all consumers migrate).
+
+This is the first concrete implementation of Rule 2 (Single State Ownership)
+that is actually live in the running application.
 
 ---
 
-## 8. Safe Return Point
+## 7. What Is Still Not Done
+
+### Completed (verified in live code)
+
+- Architecture contract written
+- Documentation suite (pod spec, state inventory, issue planning)
+- AudioWorklet physics engine — running at sample rate
+- Glue-coupled actuators — physically correct Dirichlet coupling
+- Adaptive display smoothing — separate rendering concern
+- ParamBus — single parameter authority, dirty-checked worklet forwarding
+- Grid resolution locked to boot-time (Hot-Path Allocation Ban)
+
+### Dormant (exists in source, not integrated)
+
+- Pod runtime (`src/pod-runtime.js`) — designed for pre-worklet architecture
+- Slider pods (`src/pods/*.pod.js`) — reference implementations, not mounted
+- Session-backed pod persistence — schema exists, not connected
+- Audio source registry — introduced but not exercised by current code paths
+- Force gateway — superseded by worklet glue coupling
+
+### Not Yet Done
+
+- Three.js renderer extraction (next slice — ~300 lines out of monolith)
+- Actuator/collector management extraction (~200 lines)
+- Audio source switching extraction (~400 lines)
+- Legacy slider tile conversion to ES modules
+- Pod system redesign around actual signal flow (ParamBus + worklet)
+- Latency measurement harness
+- Full hot-path allocation audit
+
+---
+
+## 8. Recommended Next Steps
+
+### Immediate: Extract Three.js Renderer
+
+Pull scene setup, geometry, material, camera, mesh update, and orbit controls
+into `src/visual/renderer.js`. The monolith calls `renderer.updateMesh(snapshot)`
+each frame. This is the most self-contained chunk — no audio or parameter
+dependencies. Reduces monolith by ~300 lines and establishes the pattern for
+subsequent extractions.
+
+### Then: Extract Actuator/Collector Management
+
+`src/core/actor-manager.js` — addActuator, addCollector, clearActuators,
+syncToWorklet. ~200 lines.
+
+### Then: Extract Audio Source Switching
+
+`src/audio/source-manager.js` — tab capture, mic, file input, demo loops.
+Each source returns `{ connect(), disconnect() }`. ~400 lines.
+
+### Then: Convert Legacy Slider Tiles to Modules
+
+Each tile type becomes `src/ui/tiles/wave-speed-slider.js` etc.
+Exports `create(container, paramBus)`. Legacy `tiles-config.json` switches
+from inline `createSliderTile()` to dynamic import.
+
+### Later: Redesign Pod System
+
+Only after the wiring is clean. Pods declare ports that map to real worklet
+messages. Pod state serializes through ParamBus. This is where the
+architecture gets beautiful — but not before.
+
+---
+
+## 9. Safe Return Point
 
 If work pauses here, the clean restart point is:
 
-- the contract exists
-- the migration docs exist
-- the live app has real runtime seams for:
-  - parameter ownership
-  - force entry
-  - audio source ownership
-- the main-thread pod runtime exists
-- the first horizontal pod sweep is complete
-- the persistence boundary is active for the current pod set
-- the keyboard is back in the source layer rather than acting as direct force
+- The architecture contract exists
+- AudioWorklet is the live physics engine (48kHz, glue-coupled)
+- ParamBus is the live parameter authority (dirty-checked forwarding)
+- The monolith still works — all changes are additive with legacy bridges
+- The pod runtime is dormant reference code, not live — don't try to integrate it
+- The next task is mechanical extraction (renderer → actors → audio → tiles)
+- Each extraction slice has clear boundaries defined in `docs/INTEGRATION-PLAN.md`
 
-That means the project can safely resume from this exact spot without needing
-to rediscover the architecture from scratch.
+The integration plan (`docs/INTEGRATION-PLAN.md`) contains the step-by-step
+contract for each slice, including acceptance criteria and explicit "What NOT
+to do" constraints.
 
 ---
 
-## 9. Working Tree Note
+## 10. Commit History (Architecture Milestones)
 
-At the time of writing, this migration work is present in the working tree and
-not yet committed as a single architecture milestone.
-
-Relevant modified or new files currently include:
-
-- `brane-with-collectors-websocket.html`
-- `tiles-config.json`
-- `src/pod-runtime.js`
-- `src/pods/parameter-slider-pod-base.js`
-- `src/pods/wave-speed-slider.pod.js`
-- `src/pods/damping-slider.pod.js`
-- `src/pods/actuator-gain-slider.pod.js`
-- `src/pods/keyboard-instrument.pod.js`
-- `research/pod-architecture-spec.md`
-- `research/state-ownership-inventory.md`
-- `research/pod-migration-issues.md`
-- `research/pod-migration-github-issues.md`
-- `README.md`
-- `SYSTEM-STATE.md`
-
-This document is a status summary, not a commit boundary.
+- `8d5d32b` — AudioWorklet physics engine: membrane simulation at sample rate
+- `5f5e2ca` — Glue-coupled actuators, adaptive display smoothing, physics controls
+- `e3122bb` — ParamBus as single parameter authority (dirty-checked worklet forwarding)
