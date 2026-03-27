@@ -41,11 +41,12 @@
       "type": "slider",
       "width": 160,
       "height": 90,
-      "min": 0.05,
-      "max": 0.3,
-      "default": 0.15,
+      "min": 0.00005,
+      "max": 0.333,
+      "default": 0.3,
       "variable": "waveSpeed",
-      "color": "#4444ff"
+      "color": "#4444ff",
+      "curve": 4.0
     },
     {
       "id": "damping",
@@ -53,10 +54,11 @@
       "width": 160,
       "height": 90,
       "min": 0,
-      "max": 0.05,
-      "default": 0.01,
+      "max": 0.01,
+      "default": 0.002,
       "variable": "damping",
-      "color": "#ff4444"
+      "color": "#ff4444",
+      "curve": 5.0
     },
     {
       "id": "gain",
@@ -68,6 +70,24 @@
       "default": 3.0,
       "variable": "actuatorGain",
       "color": "#44ff44"
+    },
+    {
+      "id": "freeze",
+      "type": "toggle",
+      "width": 60,
+      "height": 60,
+      "action": "freezePhysics",
+      "color": "#00aaff",
+      "icon": "⏸"
+    },
+    {
+      "id": "export-heightmap",
+      "type": "button",
+      "width": 60,
+      "height": 60,
+      "action": "exportHeightmap",
+      "color": "#ffaa00",
+      "icon": "📷"
     },
     {
       "id": "clear-all",
@@ -95,6 +115,18 @@
       "action": "toggleWireframe",
       "color": "#00ffaa",
       "icon": "⬡"
+    },
+    {
+      "id": "smoothing",
+      "type": "slider",
+      "width": 160,
+      "height": 90,
+      "min": 0.001,
+      "max": 0.3,
+      "default": 0.3,
+      "variable": "displaySmoothing",
+      "color": "#ff88ff",
+      "curve": 2.0
     },
     {
       "id": "grid-size",

@@ -23,9 +23,9 @@ export default class WaveSpeedSliderPod extends ParameterSliderPod {
     constructor(ctx, savedState) {
         super(ctx, savedState, {
             paramId: 'membrane_wave_speed',
-            min: savedState?.min ?? 0.05,
-            max: savedState?.max ?? 0.3,
-            defaultValue: savedState?.defaultValue ?? 0.15,
+            min: savedState?.min ?? 0.00005,
+            max: savedState?.max ?? 0.333,
+            defaultValue: savedState?.defaultValue ?? 0.3,
             color: savedState?.color ?? '#4444ff',
             drawWaveform(ctx2d, width, height, t) {
                 const cycles = 1 + t * 7;

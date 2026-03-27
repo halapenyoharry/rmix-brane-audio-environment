@@ -149,7 +149,7 @@ class MembraneWorkletNode {
      */
     setActuatorGain(gain) {
         this.actuatorGain = gain;
-        this.node.port.postMessage({ type: 'setParam', key: 'actuatorGain', value: gain });
+        if (this.node) this.node.port.postMessage({ type: 'setParam', key: 'actuatorGain', value: gain });
     }
 
     /**
@@ -158,7 +158,7 @@ class MembraneWorkletNode {
      */
     setWaveSpeed(speed) {
         this.waveSpeed = speed;
-        this.node.port.postMessage({ type: 'setParam', key: 'waveSpeed', value: speed });
+        if (this.node) this.node.port.postMessage({ type: 'setParam', key: 'waveSpeed', value: speed });
     }
 
     /**
@@ -167,7 +167,15 @@ class MembraneWorkletNode {
      */
     setDamping(damping) {
         this.damping = damping;
-        this.node.port.postMessage({ type: 'setParam', key: 'damping', value: damping });
+        if (this.node) this.node.port.postMessage({ type: 'setParam', key: 'damping', value: damping });
+    }
+
+    /**
+     * Set display smoothing factor (overrides adaptive calculation).
+     * @param {number} factor - 0.001 (very smooth) to 0.3 (near-instant)
+     */
+    setSmoothing(factor) {
+        if (this.node) this.node.port.postMessage({ type: 'setParam', key: 'smoothFactor', value: factor });
     }
 
     /**
@@ -182,6 +190,41 @@ class MembraneWorkletNode {
         if (config.boundaryType != null) this.boundaryType = config.boundaryType;
 
         this.node.port.postMessage({ type: 'configure', ...config });
+    }
+
+    /**
+     * Set the worklet snapshot rate to match the actual display refresh rate.
+     * @param {number} hz - Target snapshot rate in Hz
+     */
+    setSnapshotRate(hz) {
+        if (this.node) this.node.port.postMessage({ type: 'setSnapshotRate', rate: hz });
+    }
+
+    /**
+     * Measure the actual display refresh rate and tell the worklet.
+     * Runs a short burst of requestAnimationFrame to sample real frame timing,
+     * then sends the measured rate to the processor.
+     */
+    syncToDisplayRate() {
+        let frames = 0;
+        let startTime = 0;
+        const sampleFrames = 20; // measure over 20 frames
+
+        const tick = (timestamp) => {
+            if (frames === 0) {
+                startTime = timestamp;
+            }
+            frames++;
+            if (frames <= sampleFrames) {
+                requestAnimationFrame(tick);
+            } else {
+                const elapsed = timestamp - startTime;
+                const measuredHz = Math.round((sampleFrames / elapsed) * 1000);
+                console.log(`Display refresh measured: ${measuredHz} Hz — syncing worklet snapshots`);
+                this.setSnapshotRate(measuredHz);
+            }
+        };
+        requestAnimationFrame(tick);
     }
 
     // ─── Actions ───────────────────────────────────────────────────

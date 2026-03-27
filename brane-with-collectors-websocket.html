@@ -243,6 +243,11 @@
 <body>
     <div id="loading">Loading Three.js...</div>
     <div id="canvas-container"></div>
+    <div id="version-label" style="
+        position: fixed; top: 8px; left: 8px; z-index: 10000;
+        font: 10px 'JetBrains Mono', monospace; color: rgba(255,255,255,0.3);
+        pointer-events: none; user-select: none;
+    ">v0.4.0-worklet-physics</div>
 
     <!-- Slider Inspector Panel -->
     <div id="slider-inspector">
@@ -317,8 +322,8 @@
             0.01,
             5000
         );
-        // Front-on view: centered so L=left R=right, low angle, near edge sits at screen bottom
-        camera.position.set(0, 45, 155);
+        // Default: elevated centered view — membrane fills the frame, slight angle for depth
+        camera.position.set(0, 120, 60);
         camera.lookAt(0, 0, 0);
 
         const renderer = new THREE.WebGLRenderer({
@@ -488,6 +493,9 @@
                 syncActuatorsToWorklet();
                 syncCollectorsToWorklet();
 
+                // Match snapshot rate to actual display refresh rate
+                membraneWorklet.syncToDisplayRate();
+
                 console.log(`AudioWorklet physics initialized (${workletGridSize}x${workletGridSize} grid at ${audioContext.sampleRate}Hz)`);
             } catch (err) {
                 console.error('AudioWorklet init failed, falling back to main-thread physics:', err);
@@ -513,7 +521,7 @@
             membraneWorklet.setActuators(actuators.map(a => ({
                 gridX: Math.round(a.gridX * scale),
                 gridY: Math.round(a.gridY * scale),
-                radius: Math.max(1, Math.round(a.baseSize * 1.5 * scale)),
+                radius: Math.max(3, Math.round(a.baseSize * 1.5 * scale)),
                 channel: a.channel
             })));
         }
@@ -773,6 +781,192 @@
             material.wireframe = !material.wireframe;
             updateToggleStates();
         }
+
+        // Freeze/unfreeze physics — saves waveSpeed and sets it to 0
+        let physicsFrozen = false;
+        let frozenWaveSpeed = null;
+        window.freezePhysics = function() {
+            physicsFrozen = !physicsFrozen;
+            if (physicsFrozen) {
+                frozenWaveSpeed = Number(window.waveSpeed);
+                window.waveSpeed = 0;
+                if (membraneWorklet) membraneWorklet.setWaveSpeed(0);
+            } else {
+                window.waveSpeed = frozenWaveSpeed || 0.3;
+                if (membraneWorklet) membraneWorklet.setWaveSpeed(window.waveSpeed);
+            }
+            updateToggleStates();
+        };
+
+        /**
+         * Export current membrane heightmap as grayscale PNG.
+         * Maps displacement values to 0-255 range (128 = rest, 0 = min, 255 = max).
+         * Returns the canvas for further use; also triggers download.
+         */
+        window.exportHeightmap = function(download = true) {
+            const snapshot = workletSnapshot;
+            if (!snapshot) {
+                console.warn('No snapshot available to export');
+                return null;
+            }
+
+            const ws = workletGridSize;
+            const wStride = ws + 1;
+            const size = wStride;
+
+            // Find value range for normalization
+            let minVal = Infinity, maxVal = -Infinity;
+            for (let k = 0; k < snapshot.length; k++) {
+                if (snapshot[k] < minVal) minVal = snapshot[k];
+                if (snapshot[k] > maxVal) maxVal = snapshot[k];
+            }
+            const range = Math.max(Math.abs(minVal), Math.abs(maxVal)) || 1;
+
+            // Render to canvas — grayscale, 128 = zero/rest
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx2d = canvas.getContext('2d');
+            const imageData = ctx2d.createImageData(size, size);
+            const data = imageData.data;
+
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const h = snapshot[i * wStride + j];
+                    // Symmetric mapping: -range → 0, 0 → 128, +range → 255
+                    const byte = Math.max(0, Math.min(255, Math.round(128 + (h / range) * 127)));
+                    const px = (i * size + j) * 4;
+                    data[px] = byte;     // R
+                    data[px + 1] = byte; // G
+                    data[px + 2] = byte; // B
+                    data[px + 3] = 255;  // A
+                }
+            }
+            ctx2d.putImageData(imageData, 0, 0);
+
+            if (download) {
+                const link = document.createElement('a');
+                link.download = `brane-heightmap-${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                console.log(`Exported heightmap ${size}×${size} (range: ±${range.toFixed(3)})`);
+            }
+
+            return canvas;
+        };
+
+        /**
+         * Export heightmap and send to ComfyUI on lumen for img2img generation.
+         * Uploads the PNG via ComfyUI's /upload/image endpoint, then queues
+         * an img2img workflow using stock nodes only.
+         *
+         * @param {string} prompt - Text prompt for the diffusion model
+         * @param {number} denoise - Denoising strength (0 = keep heightmap, 1 = ignore it)
+         * @param {string} checkpoint - Model checkpoint filename
+         */
+        window.exportToComfy = async function(
+            prompt = 'organic alien landscape, cinematic lighting, detailed',
+            denoise = 0.55,
+            checkpoint = 'sd_xl_base_1.0.safetensors'
+        ) {
+            const snapshot = workletSnapshot;
+            if (!snapshot) { console.warn('No snapshot available'); return; }
+
+            const canvas = window.exportHeightmap(false);
+            if (!canvas) return;
+
+            // Upscale to 1024x1024 for SDXL
+            const upscaled = document.createElement('canvas');
+            upscaled.width = 1024;
+            upscaled.height = 1024;
+            const uctx = upscaled.getContext('2d');
+            uctx.imageSmoothingEnabled = true;
+            uctx.drawImage(canvas, 0, 0, 1024, 1024);
+
+            // Convert canvas to blob for upload
+            const blob = await new Promise(r => upscaled.toBlob(r, 'image/png'));
+            const filename = `brane_heightmap_${Date.now()}.png`;
+
+            // 1. Upload to ComfyUI input directory
+            const formData = new FormData();
+            formData.append('image', blob, filename);
+            formData.append('overwrite', 'true');
+
+            const COMFY = 'http://192.168.1.3:8188';
+
+            try {
+                const uploadResp = await fetch(`${COMFY}/upload/image`, {
+                    method: 'POST', body: formData
+                });
+                const uploadResult = await uploadResp.json();
+                console.log('Heightmap uploaded:', uploadResult.name);
+
+                // 2. Queue img2img workflow using stock nodes
+                const workflow = {
+                    "1": {
+                        "class_type": "LoadImage",
+                        "inputs": { "image": uploadResult.name }
+                    },
+                    "2": {
+                        "class_type": "CheckpointLoaderSimple",
+                        "inputs": { "ckpt_name": checkpoint }
+                    },
+                    "3": {
+                        "class_type": "CLIPTextEncode",
+                        "inputs": { "text": prompt, "clip": ["2", 1] }
+                    },
+                    "4": {
+                        "class_type": "CLIPTextEncode",
+                        "inputs": {
+                            "text": "blurry, ugly, deformed, text, watermark",
+                            "clip": ["2", 1]
+                        }
+                    },
+                    "5": {
+                        "class_type": "VAEEncode",
+                        "inputs": { "pixels": ["1", 0], "vae": ["2", 2] }
+                    },
+                    "6": {
+                        "class_type": "KSampler",
+                        "inputs": {
+                            "model": ["2", 0],
+                            "positive": ["3", 0],
+                            "negative": ["4", 0],
+                            "latent_image": ["5", 0],
+                            "seed": Math.floor(Math.random() * 2**32),
+                            "steps": 25,
+                            "cfg": 7.0,
+                            "sampler_name": "euler_ancestral",
+                            "scheduler": "normal",
+                            "denoise": denoise
+                        }
+                    },
+                    "7": {
+                        "class_type": "VAEDecode",
+                        "inputs": { "samples": ["6", 0], "vae": ["2", 2] }
+                    },
+                    "8": {
+                        "class_type": "SaveImage",
+                        "inputs": {
+                            "images": ["7", 0],
+                            "filename_prefix": "brane_diffusion"
+                        }
+                    }
+                };
+
+                const promptResp = await fetch(`${COMFY}/prompt`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: workflow })
+                });
+                const result = await promptResp.json();
+                console.log(`ComfyUI job queued: ${result.prompt_id}`);
+                console.log(`View at: ${COMFY} — output in brane_diffusion_*.png`);
+            } catch (err) {
+                console.error('ComfyUI connection failed:', err.message);
+                console.log('Make sure ComfyUI is running on lumen:8188');
+            }
+        };
 
         // Rebuild mesh + physics at new grid resolution — one job
         window.gridResolution = 100;
@@ -1487,6 +1681,9 @@
                 membraneWorklet.setWaveSpeed(physics.waveSpeed);
                 membraneWorklet.setDamping(physics.damping);
                 membraneWorklet.setActuatorGain(window.actuatorGain);
+                if (window.displaySmoothing > 0) {
+                    membraneWorklet.setSmoothing(window.displaySmoothing);
+                }
             }
 
             const positions = membrane.geometry.attributes.position.array;
@@ -1755,6 +1952,22 @@
                 actuators.forEach(actuator => {
                     actuator.apply();
                 });
+            } else {
+                // Worklet owns physics — update actuator visuals from snapshot heights
+                actuators.forEach(actuator => {
+                    if (!actuator.visual || !workletSnapshot) return;
+                    const ws = workletGridSize;
+                    const wStride = ws + 1;
+                    // Map actuator grid coords to worklet grid
+                    const scale = ws / gridSize;
+                    const wi = Math.round(actuator.gridX * scale);
+                    const wj = Math.round(actuator.gridY * scale);
+                    if (wi >= 0 && wi <= ws && wj >= 0 && wj <= ws) {
+                        const memHeight = workletSnapshot[wi * wStride + wj];
+                        const waveH = material.uniforms.waveHeight.value;
+                        actuator.visual.position.y = memHeight * waveH;
+                    }
+                });
             }
 
             updatePhysics();
@@ -1784,22 +1997,26 @@
             const response = await fetch('tiles-config.json');
             tilesConfig = await response.json();
 
-            // Default layout: two rows along the top, grouped by function
-            // Row 1 (y=10): mini-membrane | input toggles | physics sliders
-            // Row 2 (y=80): utilities
+            // Layout: two rows, grouped by function
+            // Row 1 (y=10): keyboard | input sources | physics sliders
+            // Row 2 (y=140): mini-membrane | action buttons
             const defaultPositions = {
-                'mini-membrane':  { x: 10,  y: 10 },
-                'tab-capture':    { x: 140, y: 10 },
-                'mic-input':      { x: 205, y: 10 },
-                'demo-loops':     { x: 270, y: 10 },
-                'file-input':     { x: 335, y: 10 },
-                'wave-speed':     { x: 410, y: 10 },
-                'gain':           { x: 580, y: 10 },
-                'damping':        { x: 750, y: 10 },
-                'clear-all':      { x: 920, y: 10 },
-                'fullscreen':     { x: 990, y: 10 },
-                'wireframe':      { x: 1060, y: 10 },
-                'grid-size':      { x: 1130, y: 10 },
+                'keyboard':         { x: 10,  y: 10 },
+                'tab-capture':      { x: 340, y: 10 },
+                'mic-input':        { x: 410, y: 10 },
+                'demo-loops':       { x: 480, y: 10 },
+                'file-input':       { x: 550, y: 10 },
+                'wave-speed':       { x: 620, y: 10 },
+                'gain':             { x: 790, y: 10 },
+                'damping':          { x: 960, y: 10 },
+                'smoothing':        { x: 1130, y: 10 },
+                'grid-size':        { x: 1300, y: 10 },
+                'mini-membrane':    { x: 10,  y: 120 },
+                'freeze':           { x: 140, y: 140 },
+                'export-heightmap': { x: 210, y: 140 },
+                'clear-all':        { x: 280, y: 140 },
+                'fullscreen':       { x: 350, y: 140 },
+                'wireframe':        { x: 420, y: 140 },
             };
             tilesConfig.tiles.forEach(tile => {
                 tilePositions[tile.id] = defaultPositions[tile.id] || { x: 10, y: 10 };
@@ -2013,6 +2230,8 @@
                 } else if (tileData.action === 'clearAll') {
                     clearActuators();
                     clearCollectors();
+                } else if (tileData.action === 'exportHeightmap') {
+                    window.exportHeightmap();
                 } else if (tileData.action === 'toggleFullscreen') {
                     if (!document.fullscreenElement) {
                         document.documentElement.requestFullscreen();
@@ -2144,7 +2363,16 @@
                 border-radius: 2px; position: relative; cursor: pointer; flex-shrink: 0;
             `;
 
-            const initialPercent = (tileData.default - tileData.min) / (tileData.max - tileData.min);
+            // Power curve for slider resolution: curve > 1 concentrates precision
+            // at the low end. curve = 1 is linear. curve = 3 gives ~80% of slider
+            // travel to the bottom third of the value range.
+            const curve = tileData.curve || 1.0;
+            // value → percent (for thumb position)
+            const valueToPct = (v) => Math.pow((v - tileData.min) / (tileData.max - tileData.min), 1.0 / curve);
+            // percent → value (for drag input)
+            const pctToValue = (p) => tileData.min + Math.pow(p, curve) * (tileData.max - tileData.min);
+
+            const initialPercent = valueToPct(tileData.default);
             const thumb = document.createElement('div');
             thumb.style.cssText = `
                 position: absolute;
@@ -2167,8 +2395,7 @@
             function updateSlider(value) {
                 value = Math.max(tileData.min, Math.min(tileData.max, value));
                 window[tileData.variable] = value;
-                const pct = (value - tileData.min) / (tileData.max - tileData.min);
-                thumb.style.left = `${pct * 100}%`;
+                thumb.style.left = `${valueToPct(value) * 100}%`;
                 drawParamWaveform(canvas, tileData, value);
                 if (tileData.variable === 'gridResolution') {
                     clearTimeout(rebuildThrottle);
@@ -2186,7 +2413,7 @@
                 function onMove(e) {
                     if (!isDragging) return;
                     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                    updateSlider(tileData.min + pct * (tileData.max - tileData.min));
+                    updateSlider(pctToValue(pct));
                 }
                 function onUp() {
                     isDragging = false;
@@ -2202,8 +2429,11 @@
             track.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const step = (tileData.max - tileData.min) * 0.02;
-                updateSlider(window[tileData.variable] + (e.deltaY < 0 ? step : -step));
+                // Step in percent-space so curve-aware sliders get fine control at low values
+                const currentPct = valueToPct(window[tileData.variable]);
+                const stepPct = 0.02;
+                const newPct = Math.max(0, Math.min(1, currentPct + (e.deltaY < 0 ? stepPct : -stepPct)));
+                updateSlider(pctToValue(newPct));
             }, { passive: false });
 
             track.addEventListener('contextmenu', (e) => {
@@ -2388,6 +2618,7 @@
             if (action === 'captureTab') return tabAudioActive;
             if (action === 'toggleMic') return micActive;
             if (action === 'toggleWireframe') return material.wireframe;
+            if (action === 'freezePhysics') return physicsFrozen;
             return false;
         }
 
