@@ -292,6 +292,10 @@
     <script src="src/audio/MicrophoneInput.js"></script>
     <script src="src/schema/SchemaParser.js"></script>
     <script src="src/visual/MappingCurveEngine.js"></script>
+    <script type="module">
+        import { paramBus } from './src/core/param-bus.js';
+        window.paramBus = paramBus;
+    </script>
     <script>
         // Hide loading once Three.js loads
         document.getElementById('loading').style.display = 'none';
@@ -475,9 +479,9 @@
             try {
                 membraneWorklet = new MembraneWorkletNode(audioContext, {
                     gridSize: workletGridSize,
-                    waveSpeed: Number(window.waveSpeed),
-                    damping: Number(window.damping),
-                    actuatorGain: Number(window.actuatorGain),
+                    waveSpeed: window.paramBus ? window.paramBus.get('membrane_wave_speed') : Number(window.waveSpeed),
+                    damping: window.paramBus ? window.paramBus.get('membrane_damping') : Number(window.damping),
+                    actuatorGain: window.paramBus ? window.paramBus.get('membrane_actuator_gain') : Number(window.actuatorGain),
                     boundaryType: 'fixed',
                     collectorCount: 2
                 });
@@ -788,12 +792,23 @@
         window.freezePhysics = function() {
             physicsFrozen = !physicsFrozen;
             if (physicsFrozen) {
-                frozenWaveSpeed = Number(window.waveSpeed);
-                window.waveSpeed = 0;
-                if (membraneWorklet) membraneWorklet.setWaveSpeed(0);
+                frozenWaveSpeed = window.paramBus
+                    ? window.paramBus.get('membrane_wave_speed')
+                    : Number(window.waveSpeed);
+                if (window.paramBus) {
+                    window.paramBus.set('membrane_wave_speed', 0);
+                } else {
+                    window.waveSpeed = 0;
+                    if (membraneWorklet) membraneWorklet.setWaveSpeed(0);
+                }
             } else {
-                window.waveSpeed = frozenWaveSpeed || 0.3;
-                if (membraneWorklet) membraneWorklet.setWaveSpeed(window.waveSpeed);
+                const restoreSpeed = frozenWaveSpeed || 0.3;
+                if (window.paramBus) {
+                    window.paramBus.set('membrane_wave_speed', restoreSpeed);
+                } else {
+                    window.waveSpeed = restoreSpeed;
+                    if (membraneWorklet) membraneWorklet.setWaveSpeed(restoreSpeed);
+                }
             }
             updateToggleStates();
         };
@@ -1671,19 +1686,31 @@
 
         // Physics update
         function updatePhysics() {
-            // Update physics parameters from UI globals
-            physics.waveSpeed = Number(window.waveSpeed);
-            physics.damping = Number(window.damping);
-            window.actuatorGain = Number(window.actuatorGain);
-
-            // Forward parameter changes to worklet
-            if (membraneWorklet) {
-                membraneWorklet.setWaveSpeed(physics.waveSpeed);
-                membraneWorklet.setDamping(physics.damping);
-                membraneWorklet.setActuatorGain(window.actuatorGain);
-                if (window.displaySmoothing > 0) {
-                    membraneWorklet.setSmoothing(window.displaySmoothing);
+            // Forward changed params to worklet (dirty-checked)
+            if (window.paramBus && membraneWorklet) {
+                const dirty = window.paramBus.getDirtyParams();
+                if (dirty.size > 0) {
+                    if (dirty.has('membrane_wave_speed'))
+                        membraneWorklet.setWaveSpeed(dirty.get('membrane_wave_speed'));
+                    if (dirty.has('membrane_damping'))
+                        membraneWorklet.setDamping(dirty.get('membrane_damping'));
+                    if (dirty.has('membrane_actuator_gain'))
+                        membraneWorklet.setActuatorGain(dirty.get('membrane_actuator_gain'));
+                    if (dirty.has('display_smoothing'))
+                        membraneWorklet.setSmoothing(dirty.get('display_smoothing'));
+                    window.paramBus.markAllForwarded();
                 }
+            }
+
+            // Legacy bridge — keep main-thread physics object in sync
+            if (window.paramBus) {
+                physics.waveSpeed = window.paramBus.get('membrane_wave_speed');
+                physics.damping = window.paramBus.get('membrane_damping');
+                window.paramBus.syncToWindowGlobals();
+            } else {
+                physics.waveSpeed = Number(window.waveSpeed);
+                physics.damping = Number(window.damping);
+                window.actuatorGain = Number(window.actuatorGain);
             }
 
             const positions = membrane.geometry.attributes.position.array;
@@ -2059,6 +2086,12 @@
                     update => update,
                     exit => exit.remove()
                 );
+
+            // Boot-sync: capture legacy slider defaults into ParamBus (once)
+            if (window.paramBus) {
+                window.paramBus.syncFromWindowGlobals();
+                console.log('ParamBus boot-synced from legacy sliders');
+            }
         }
 
         // D3 Drag handler with hard boundaries
@@ -2341,6 +2374,13 @@
         }
 
         // Slider tile — waveform canvas + scrubber
+        const PARAM_MAP = {
+            waveSpeed: 'membrane_wave_speed',
+            damping: 'membrane_damping',
+            actuatorGain: 'membrane_actuator_gain',
+            displaySmoothing: 'display_smoothing'
+        };
+
         function createSliderTile(visual, tileData) {
             const names = { waveSpeed: 'Wave Speed', damping: 'Damping', actuatorGain: 'Input Gain' };
             const tileEl = visual.closest('.control-tile') || visual.parentElement;
@@ -2395,6 +2435,10 @@
             function updateSlider(value) {
                 value = Math.max(tileData.min, Math.min(tileData.max, value));
                 window[tileData.variable] = value;
+                const paramId = PARAM_MAP[tileData.variable];
+                if (paramId && window.paramBus) {
+                    window.paramBus.set(paramId, value);
+                }
                 thumb.style.left = `${valueToPct(value) * 100}%`;
                 drawParamWaveform(canvas, tileData, value);
                 if (tileData.variable === 'gridResolution') {
