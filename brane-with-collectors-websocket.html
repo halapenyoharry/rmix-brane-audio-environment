@@ -243,11 +243,6 @@
 <body>
     <div id="loading">Loading Three.js...</div>
     <div id="canvas-container"></div>
-    <div id="version-label" style="
-        position: fixed; top: 8px; left: 8px; z-index: 10000;
-        font: 10px 'JetBrains Mono', monospace; color: rgba(255,255,255,0.3);
-        pointer-events: none; user-select: none;
-    ">v0.4.0-worklet-physics</div>
 
     <!-- Slider Inspector Panel -->
     <div id="slider-inspector">
@@ -277,11 +272,19 @@
     <!-- Tile-based control panel -->
     <div id="controls-container">
         <!-- Tiles will be created dynamically by JavaScript -->
+        <div id="version-label" style="
+            position: fixed; top: 8px; right: 8px;
+            padding: 4px 8px; border-radius: 4px;
+            background: rgba(10, 14, 39, 0.6); border: 1px solid rgba(0, 229, 255, 0.15);
+            font: 10px 'JetBrains Mono', monospace; color: rgba(255,255,255,0.4);
+            pointer-events: none; user-select: none; z-index: 10000;
+        ">v0.4.0-worklet-physics</div>
     </div>
 
     <!-- Load Three.js from local -->
     <script src="three.min.js"></script>
     <script src="OrbitControls.js"></script>
+    <script src="src/visual/renderer.js"></script>
 
     <!-- Load D3.js for UI controls -->
     <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
@@ -316,31 +319,9 @@
             }
         })();
 
-        // Scene setup with Harold's midnight alaska aesthetic
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x0a0e27);
-
-        const camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.01,
-            5000
-        );
-        // Default: elevated centered view — membrane fills the frame, slight angle for depth
-        camera.position.set(0, 120, 60);
-        camera.lookAt(0, 0, 0);
-
-        const renderer = new THREE.WebGLRenderer({
-            antialias: true,
-            canvas: document.createElement('canvas')
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.target.set(0, 0, 0);
+        // Scene setup — delegated to renderer module
+        const { scene, camera, renderer, controls, membrane, material } =
+            window._renderer.init(document.getElementById('canvas-container'));
 
         // Performance monitor (press P to toggle)
         const stats = new Stats();
@@ -381,76 +362,9 @@
             }
         });
 
-        // Lighting optimized for Harold's colors
-        const ambientLight = new THREE.AmbientLight(0x1a237e, 0.4);
-        scene.add(ambientLight);
-
-        const directionalLight = new THREE.DirectionalLight(0x00e5ff, 0.6);
-        directionalLight.position.set(100, 100, 50);
-        scene.add(directionalLight);
-
-        // 3D Membrane
+        // Membrane grid constants (used by physics, actuators, collectors)
         let gridSize = 100;
         const membraneSize = 200;
-        let geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
-
-        // Custom shader material for Harold's aesthetic
-        const material = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 },
-                waveHeight: { value: 20.0 },
-                opacity: { value: 1.0 }
-            },
-            vertexShader: `
-                varying vec3 vNormal;
-                varying vec3 vPosition;
-                varying float vHeight;
-
-                void main() {
-                    vPosition = position;
-                    vHeight = position.z;
-                    vNormal = normal;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform float opacity;
-                uniform float time;
-
-                varying vec3 vNormal;
-                varying vec3 vPosition;
-                varying float vHeight;
-
-                vec3 hsl2rgb(float h, float s, float l) {
-                    vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-                    return l + s * (rgb - 0.5) * (1.0 - abs(2.0 * l - 1.0));
-                }
-
-                void main() {
-                    float t = (vHeight + 10.0) / 20.0;
-                    t = clamp(t, 0.0, 1.0);
-
-                    // Full spectrum sweep centered on cyan at rest (height=0, t=0.5)
-                    float hue = mod(0.5 + (t - 0.5) * 0.75, 1.0);
-                    vec3 color = hsl2rgb(hue, 1.0, 0.5);
-
-                    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-                    float diff = max(dot(vNormal, lightDir), 0.0);
-                    color *= (0.7 + diff * 0.3);
-
-                    gl_FragColor = vec4(color, opacity);
-                }
-            `,
-            transparent: false,
-            side: THREE.DoubleSide,
-            wireframe: false,
-            depthWrite: true,
-            depthTest: true
-        });
-
-        let membrane = new THREE.Mesh(geometry, material);
-        membrane.rotation.x = -Math.PI / 2;
-        scene.add(membrane);
 
         // Physics Engine Integration
         const physics = new MembranePhysics({
@@ -992,8 +906,7 @@
             gridSize = newSize;
 
             // Rebuild Three.js geometry
-            membrane.geometry.dispose();
-            membrane.geometry = new THREE.PlaneGeometry(membraneSize, membraneSize, gridSize, gridSize);
+            window._renderer.rebuildGeometry(gridSize);
 
             // Rebuild physics at new resolution (clears state)
             physics.setGridSize(gridSize);
@@ -1713,69 +1626,12 @@
                 window.actuatorGain = Number(window.actuatorGain);
             }
 
-            const positions = membrane.geometry.attributes.position.array;
-            const waveH = material.uniforms.waveHeight.value;
-
             if (membraneWorklet && workletSnapshot) {
-                // ── Worklet path: render from snapshot ─────────────────
-                // workletSnapshot is flat Float32Array from worklet grid (workletGridSize+1)²
-                // Render grid may be larger — bilinear upsample
-                const ws = workletGridSize;
-                const wStride = ws + 1;
-                const rs = gridSize;
-                const rStride = rs + 1;
-
-                if (ws === rs) {
-                    // Same resolution — direct copy
-                    for (let i = 0; i <= rs; i++) {
-                        for (let j = 0; j <= rs; j++) {
-                            const posIdx = (i * rStride + j) * 3 + 2;
-                            positions[posIdx] = workletSnapshot[i * wStride + j] * waveH;
-                        }
-                    }
-                } else {
-                    // Bilinear upsample from worklet grid to render grid
-                    const scale = ws / rs;
-                    for (let i = 0; i <= rs; i++) {
-                        for (let j = 0; j <= rs; j++) {
-                            const fi = i * scale;
-                            const fj = j * scale;
-                            const i0 = Math.min(Math.floor(fi), ws - 1);
-                            const j0 = Math.min(Math.floor(fj), ws - 1);
-                            const i1 = Math.min(i0 + 1, ws);
-                            const j1 = Math.min(j0 + 1, ws);
-                            const ti = fi - i0;
-                            const tj = fj - j0;
-
-                            const h00 = workletSnapshot[i0 * wStride + j0];
-                            const h10 = workletSnapshot[i1 * wStride + j0];
-                            const h01 = workletSnapshot[i0 * wStride + j1];
-                            const h11 = workletSnapshot[i1 * wStride + j1];
-
-                            const h = (1 - ti) * (1 - tj) * h00 +
-                                      ti * (1 - tj) * h10 +
-                                      (1 - ti) * tj * h01 +
-                                      ti * tj * h11;
-
-                            const posIdx = (i * rStride + j) * 3 + 2;
-                            positions[posIdx] = h * waveH;
-                        }
-                    }
-                }
+                window._renderer.updateMesh(workletSnapshot, workletGridSize, gridSize);
             } else {
-                // ── Fallback: main-thread physics ──────────────────────
                 physics.updatePhysics();
-                const heights = physics.heights;
-                for (let i = 0; i <= gridSize; i++) {
-                    for (let j = 0; j <= gridSize; j++) {
-                        const index = (i * (gridSize + 1) + j) * 3 + 2;
-                        positions[index] = heights[i][j] * waveH;
-                    }
-                }
+                window._renderer.updateMesh(null, 0, gridSize, physics.heights);
             }
-
-            membrane.geometry.attributes.position.needsUpdate = true;
-            membrane.geometry.computeVertexNormals();
         }
 
         // Mouse interaction
@@ -1899,7 +1755,7 @@
                 const container = document.getElementById('controls-container');
                 controlsHidden = !controlsHidden;
                 container.classList.toggle('hidden');
-                handleResize();
+                window.dispatchEvent(new Event('resize'));
                 return;
             }
 
@@ -2955,15 +2811,6 @@
             });
         }
 
-
-        // Handle resize
-        function handleResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        window.addEventListener('resize', handleResize);
 
         // Initialize and start
         initializeArrays();
