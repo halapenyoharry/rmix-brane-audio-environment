@@ -286,6 +286,7 @@
     <script src="OrbitControls.js"></script>
     <script src="src/visual/renderer.js"></script>
     <script src="src/core/actor-manager.js"></script>
+    <script src="src/audio/source-manager.js"></script>
 
     <!-- Load D3.js for UI controls -->
     <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
@@ -426,16 +427,6 @@
             }
         }
 
-        /**
-         * Connect an audio source node to the worklet input.
-         * The source's stereo channels map to actuator L/R assignments.
-         */
-        function connectSourceToWorklet(sourceNode) {
-            if (!membraneWorklet || !membraneWorklet.node) return;
-            sourceNode.connect(membraneWorklet.node);
-        }
-
-
         // Initialize UI variables on window for D3 binding
         window.waveSpeed = physics.waveSpeed;
         window.damping = physics.damping;
@@ -445,52 +436,24 @@
             physics.initializeArrays();
         }
 
-        // Audio and actor system state
-        let audioEnabled = false;
-        let demoMode = false;
-        let audioContext = null;
-        let audioAnalyser = null;
-        let audioDataArray = null;
-        let audioStream = null;
+        // Source manager — owns audio sources, analysers, audioContext lifecycle
+        let sourceManager = null;
 
-        // Stereo channel analysers
-        let leftAnalyser = null;
-        let rightAnalyser = null;
-        let leftAudioData = null;
-        let rightAudioData = null;
-
-        // Audio file playback
-        let audioElement = null;
-        let audioFileMode = false;
-        let audioElementSource = null; // Track if we've created source
-
-        // Tab audio capture
-        let tabAudioActive = false;
-
-        // Demo oscillator for worklet path
-        let demoOscillator = null;
-        let demoOscGain = null;
-
-        // Microphone Input
-        let micInput = null;
-        let micActive = false;
-
-        // Demo loops
-        let loopAudioElement = null;
-        let loopAudioSource = null; // Track if we've created source
-        let currentLoopIndex = 0;
-        const demoLoops = ['bass.wav', 'drums.wav', 'kick.wav'];
+        // Waveform visualizer state
+        let visualizerAnimationId = null;
 
         // Audio output for collectors
         let outputContext = null;
         let outputProcessor = null;
         let audioOutputEnabled = false;
 
-        // Waveform visualizer state
-        let visualizerAnalyser = null;
-        let visualizerAnimationId = null;
+        // Initialize source manager first — audio sources, analysers, audioContext
+        sourceManager = window._sourceManager.init({
+            updateToggleStates: updateToggleStates,
+            getWorklet: () => membraneWorklet
+        });
 
-        // Initialize actor manager
+        // Initialize actor manager (now that sourceManager is ready)
         actorManager = window._actorManager.init(
             scene,
             camera,
@@ -501,7 +464,8 @@
                 mapper: mapper,
                 gridSize: gridSize,
                 membraneSize: membraneSize,
-                getWorklet: () => membraneWorklet
+                getWorklet: () => membraneWorklet,
+                getSourceManager: () => sourceManager
             }
         );
 
@@ -742,316 +706,21 @@
         }
 
 
-        // Audio control wrappers for tiles
-        function loadAudioFile() {
-            initAudioFile();
-            // Update will happen in initAudioFile callback
-        }
-
-
-        // Initialize audio file playback
-        function initAudioFile() {
-            // Create hidden file input
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'audio/*';
-
-            input.onchange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                console.log('Loading audio file:', file.name);
-
-                // Create audio element if needed
-                if (!audioElement) {
-                    audioElement = new Audio();
-                    audioElement.loop = true;
-                    audioElement.controls = false;
-                }
-
-                // Create audio context
-                if (!audioContext) {
-                    audioContext = new AudioContext();
-                }
-
-                // Create stereo analysers if needed
-                if (!leftAnalyser) {
-                    leftAnalyser = audioContext.createAnalyser();
-                    leftAnalyser.fftSize = 256;
-                    leftAnalyser.smoothingTimeConstant = 0.3;
-
-                    rightAnalyser = audioContext.createAnalyser();
-                    rightAnalyser.fftSize = 256;
-                    rightAnalyser.smoothingTimeConstant = 0.3;
-
-                    leftAudioData = new Float32Array(leftAnalyser.fftSize);
-                    rightAudioData = new Float32Array(rightAnalyser.fftSize);
-                }
-
-                // Only create source once per element
-                if (!audioElementSource) {
-                    audioElementSource = audioContext.createMediaElementSource(audioElement);
-
-                    // Create stereo splitter
-                    const splitter = audioContext.createChannelSplitter(2);
-                    audioElementSource.connect(splitter);
-                    audioElementSource.connect(audioContext.destination);
-
-                    splitter.connect(leftAnalyser, 0);
-                    splitter.connect(rightAnalyser, 1);
-
-                    // Route to worklet for physics
-                    initWorklet().then(() => connectSourceToWorklet(audioElementSource));
-                }
-
-                // Load new file
-                const url = URL.createObjectURL(file);
-                audioElement.src = url;
-                audioElement.play();
-
-                audioFileMode = true;
-                audioEnabled = true;
-                demoMode = false;
-
-                console.log('Audio file loaded and playing:', file.name);
-            };
-
-            input.click();
-        }
-
-        // Tab audio capture
+        // Audio input delegated to sourceManager
         async function toggleMic() {
-            if (!audioContext) {
-                // Initialize audio context on first user interaction
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({
-                    sampleRate: 48000
-                });
-            }
-
-            if (audioContext.state === 'suspended') {
-                await audioContext.resume();
-            }
-
-            // Initialize mic helper if needed
-            if (!micInput) {
-                micInput = new MicrophoneInput(audioContext);
-
-                // If we already have analysers, use them
-                if (leftAnalyser && rightAnalyser) {
-                    micInput.analyserL = leftAnalyser;
-                    micInput.analyserR = rightAnalyser;
-                }
-            }
-
-            if (!micActive) {
-                try {
-                    await micInput.start();
-                    micActive = true;
-                    audioEnabled = true;
-
-                    // If we didn't have analysers before, grab them from micInput
-                    // Note: MicrophoneInput.js will create them if we passed null
-                    if (!leftAnalyser || !rightAnalyser) {
-                        leftAnalyser = micInput.analyserL;
-                        rightAnalyser = micInput.analyserR;
-
-                        // Alloc buffers
-                        leftAudioData = new Float32Array(leftAnalyser.frequencyBinCount);
-                        rightAudioData = new Float32Array(rightAnalyser.frequencyBinCount);
-                    }
-
-                    // Route mic source to worklet for physics
-                    if (micInput.sourceNode) {
-                        await initWorklet();
-                        connectSourceToWorklet(micInput.sourceNode);
-                    }
-
-                    console.log('Microphone input started');
-                } catch (e) {
-                    console.error('Failed to start mic', e);
-                    alert('Could not access microphone: ' + e.message);
-                }
-            } else {
-                micInput.stop();
-                micActive = false;
-
-                // If no other audio sources, disable processing
-                if (!tabAudioActive && !audioFileMode && !demoMode) {
-                    // audioEnabled = false; // Keep enabled to avoid glitching
-                }
-                console.log('Microphone input stopped');
-            }
-
-            updateToggleStates();
+            await sourceManager.toggleMic();
         }
 
         async function captureTabAudio() {
-            // If already active, stop it
-            if (tabAudioActive) {
-                stopTabAudio();
-                return;
-            }
-
-            try {
-                console.log('Requesting tab audio capture...');
-
-                // Check browser support
-                if (!navigator.mediaDevices) {
-                    throw new Error('MediaDevices API not available. Try:\n- Accessing via localhost (not remote host)\n- Using HTTPS instead of HTTP');
-                }
-                if (!navigator.mediaDevices.getDisplayMedia) {
-                    throw new Error('getDisplayMedia not available. This usually means:\n- You need to access via localhost (Chrome blocks this on remote HTTP)\n- OR set up HTTPS for remote access');
-                }
-
-                // Chrome requires video:true in getDisplayMedia - we discard video tracks immediately after
-                const stream = await navigator.mediaDevices.getDisplayMedia({
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false,
-                        channelCount: 2
-                    },
-                    video: true
-                });
-
-                // Drop video tracks - we only want audio
-                stream.getVideoTracks().forEach(track => track.stop());
-
-                if (stream.getAudioTracks().length === 0) {
-                    throw new Error('No audio track in capture stream. Make sure to select a tab (not a window/screen) and check "Share tab audio".');
-                }
-
-                // Create audio context if needed
-                if (!audioContext) {
-                    audioContext = new AudioContext();
-                }
-
-                const source = audioContext.createMediaStreamSource(stream);
-
-                // Create channel splitter for stereo
-                const splitter = audioContext.createChannelSplitter(2);
-                source.connect(splitter);
-
-                // Create separate analysers for left and right
-                leftAnalyser = audioContext.createAnalyser();
-                leftAnalyser.fftSize = 256;
-                leftAnalyser.smoothingTimeConstant = 0.3;
-
-                rightAnalyser = audioContext.createAnalyser();
-                rightAnalyser.fftSize = 256;
-                rightAnalyser.smoothingTimeConstant = 0.3;
-
-                splitter.connect(leftAnalyser, 0);
-                splitter.connect(rightAnalyser, 1);
-
-                leftAudioData = new Float32Array(leftAnalyser.fftSize);
-                rightAudioData = new Float32Array(rightAnalyser.fftSize);
-
-                // Route to worklet for physics
-                await initWorklet();
-                connectSourceToWorklet(source);
-
-                audioStream = stream;
-                tabAudioActive = true;
-                audioEnabled = true;
-                demoMode = false;
-                audioFileMode = false;
-
-                console.log('Tab audio captured! Use any browser tab audio.');
-
-            } catch (error) {
-                console.error('Tab capture failed:', error);
-                alert('Tab audio capture failed: ' + error.message + '\n\nTips:\n- Select a tab (not "Entire Screen" or a window)\n- Check the "Share tab audio" checkbox in the dialog\n- Works in Chrome/Edge, not Safari.');
-            }
+            await sourceManager.captureTabAudio();
         }
 
         function stopTabAudio() {
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
-                audioStream = null;
-            }
-            tabAudioActive = false;
-            audioEnabled = false;
-            console.log('Tab audio stopped');
+            // sourceManager.stopTabAudio() is called internally by captureTabAudio()
         }
 
-        // Play demo loops - toggle behavior
         function playLoop() {
-            // If already playing, stop
-            if (loopAudioElement && !loopAudioElement.paused) {
-                loopAudioElement.pause();
-                loopAudioElement.currentTime = 0;
-                audioEnabled = false;
-                audioFileMode = false;
-                console.log('Loop stopped');
-                return;
-            }
-
-            // If paused, resume
-            if (loopAudioElement && loopAudioElement.paused) {
-                loopAudioElement.play();
-                audioEnabled = true;
-                audioFileMode = true;
-                console.log('Loop resumed');
-                return;
-            }
-
-            // Start new loop
-            const loopFile = demoLoops[currentLoopIndex];
-            currentLoopIndex = (currentLoopIndex + 1) % demoLoops.length;
-
-            console.log('Loading demo loop:', loopFile);
-
-            // Create audio element if needed
-            if (!loopAudioElement) {
-                loopAudioElement = new Audio();
-                loopAudioElement.loop = true;
-            }
-
-            // Create audio context if needed
-            if (!audioContext) {
-                audioContext = new AudioContext();
-            }
-
-            // Only create analysers once
-            if (!leftAnalyser) {
-                leftAnalyser = audioContext.createAnalyser();
-                leftAnalyser.fftSize = 256;
-                leftAnalyser.smoothingTimeConstant = 0.3;
-
-                rightAnalyser = audioContext.createAnalyser();
-                rightAnalyser.fftSize = 256;
-                rightAnalyser.smoothingTimeConstant = 0.3;
-
-                leftAudioData = new Float32Array(leftAnalyser.fftSize);
-                rightAudioData = new Float32Array(rightAnalyser.fftSize);
-            }
-
-            // Only create source once per loop element
-            if (!loopAudioSource) {
-                loopAudioSource = audioContext.createMediaElementSource(loopAudioElement);
-
-                // Create channel splitter for stereo
-                const splitter = audioContext.createChannelSplitter(2);
-                loopAudioSource.connect(splitter);
-                loopAudioSource.connect(audioContext.destination);
-
-                splitter.connect(leftAnalyser, 0);
-                splitter.connect(rightAnalyser, 1);
-
-                // Route to worklet for physics
-                initWorklet().then(() => connectSourceToWorklet(loopAudioSource));
-            }
-
-            // Load new loop file
-            loopAudioElement.src = 'demo-loops/' + loopFile;
-            loopAudioElement.play();
-
-            audioEnabled = true;
-            demoMode = false;
-            audioFileMode = true;
-
-            console.log('Playing loop:', loopFile);
+            sourceManager.playLoop();
         }
 
         // ─── Keyboard Instrument (Raw Oscillators) ──────────────────────
@@ -1119,7 +788,6 @@
             osc.start();
 
             activeNotes[pitch] = { osc, gain: noteGain };
-            audioEnabled = true;
         }
 
         function keyboardNoteOff(pitch) {
@@ -1206,14 +874,6 @@
         }
 
         // ─── End Keyboard Instrument ──────────────────────────────────────
-
-        // Update audio data from stereo channels
-        function updateAudioData() {
-            if (audioEnabled && leftAnalyser && rightAnalyser && leftAudioData && rightAudioData) {
-                leftAnalyser.getFloatTimeDomainData(leftAudioData);
-                rightAnalyser.getFloatTimeDomainData(rightAudioData);
-            }
-        }
 
         // Compact spectrum visualizer for audio tiles
         function drawTileSpectrum(canvas, analyser, color) {
@@ -1377,53 +1037,9 @@
         }
 
 
-        // ── Demo Mode ───────────────────────────────────────────────
+        // Demo mode delegated to sourceManager
         function toggleDemo() {
-            demoMode = !demoMode;
-
-            if (demoMode) {
-                audioEnabled = false;
-                audioFileMode = false;
-                if (audioElement) audioElement.pause();
-
-                // Start demo oscillator for worklet input
-                startDemoOscillator();
-            } else {
-                stopDemoOscillator();
-            }
-            updateAudioToggles();
-        }
-
-        function startDemoOscillator() {
-            if (demoOscillator) return; // already running
-            if (!membraneWorklet) return; // no worklet — fallback path uses Actuator.apply()
-
-            if (!audioContext) audioContext = new AudioContext();
-
-            demoOscGain = audioContext.createGain();
-            demoOscGain.gain.value = 0.4;
-
-            demoOscillator = audioContext.createOscillator();
-            demoOscillator.type = 'sine';
-            demoOscillator.frequency.value = 2.0; // 2 Hz — slow sweep, same as before
-            demoOscillator.connect(demoOscGain);
-
-            // Route oscillator to worklet input
-            connectSourceToWorklet(demoOscGain);
-
-            demoOscillator.start();
-        }
-
-        function stopDemoOscillator() {
-            if (demoOscillator) {
-                demoOscillator.stop();
-                demoOscillator.disconnect();
-                demoOscillator = null;
-            }
-            if (demoOscGain) {
-                demoOscGain.disconnect();
-                demoOscGain = null;
-            }
+            sourceManager.toggleDemo();
         }
 
         // Keyboard controls
@@ -1446,7 +1062,7 @@
                 }
             } else if (e.key === 'l' || e.key === 'L') {
                 // Load audio file
-                initAudioFile();
+                sourceManager.selectFile();
             } else if (e.key === 'd' || e.key === 'D') {
                 toggleDemo();
             } else if (e.key === 'r' || e.key === 'R') {
@@ -1460,6 +1076,9 @@
 
         // Update all audio visualizers
         function updateAudioVisualizers() {
+            const analysers = sourceManager.getAnalysers();
+            const audioState = sourceManager.getAudioState();
+
             document.querySelectorAll('.control-tile').forEach(tile => {
                 const visual = tile.querySelector('.param-visual');
                 if (!visual || !visual.button || !visual.button.waveformCanvas) return;
@@ -1472,15 +1091,15 @@
                 let shouldShow = false;
                 let analyser = null;
 
-                if (tileData.action === 'captureTab' && tabAudioActive && leftAnalyser) {
+                if (tileData.action === 'captureTabAudio' && audioState.tabAudioActive && analysers.left) {
                     shouldShow = true;
-                    analyser = leftAnalyser;
-                } else if (tileData.action === 'playLoop' && loopAudioElement && !loopAudioElement.paused && leftAnalyser) {
+                    analyser = analysers.left;
+                } else if (tileData.action === 'playLoop' && audioState.audioFileMode && analysers.left) {
                     shouldShow = true;
-                    analyser = leftAnalyser;
-                } else if (tileData.action === 'loadFile' && audioFileMode && audioElement && !audioElement.paused && leftAnalyser) {
+                    analyser = analysers.left;
+                } else if (tileData.action === 'selectFile' && audioState.audioFileMode && analysers.left) {
                     shouldShow = true;
-                    analyser = leftAnalyser;
+                    analyser = analysers.left;
                 }
 
                 // Show/hide and update canvas
@@ -1501,15 +1120,17 @@
             stats.begin();
             requestAnimationFrame(animate);
 
-            // Update audio data (for visualizers + fallback actuators)
-            updateAudioData();
+            // Update audio analysers and buffers
+            sourceManager.updateAnalysers();
 
             // Update actor manager's runtime dependencies
+            const audioState = sourceManager.getAudioState();
+            const audioData = sourceManager.getAudioData();
             actorManager.updateDeps({
-                demoMode: demoMode,
-                audioEnabled: audioEnabled,
-                leftAudioData: leftAudioData,
-                rightAudioData: rightAudioData
+                demoMode: audioState.demoMode,
+                audioEnabled: audioState.audioEnabled,
+                leftAudioData: audioData.left,
+                rightAudioData: audioData.right
             });
 
             // Update audio visualizers on tiles
@@ -1711,18 +1332,6 @@
                 if (typeof window[tileData.action] === 'function') {
                     window[tileData.action]();
                 }
-                // Legacy fallback (can probably be removed found if everything is on window)
-                else if (tileData.action === 'captureTab') {
-                    if (!tabAudioActive) {
-                        captureTabAudio();
-                    } else {
-                        stopTabAudio();
-                    }
-                } else if (tileData.action === 'toggleDemo') {
-                    toggleDemo();
-                } else if (tileData.action === 'toggleWireframe') {
-                    toggleWireframe();
-                }
 
                 updateToggleStates();
             });
@@ -1783,10 +1392,10 @@
             }
 
             button.addEventListener('click', () => {
-                if (tileData.action === 'loadFile') {
-                    loadAudioFile();
+                if (tileData.action === 'selectFile' || tileData.action === 'loadFile') {
+                    sourceManager.selectFile();
                 } else if (tileData.action === 'playLoop') {
-                    playLoop();
+                    sourceManager.playLoop();
                 } else if (tileData.action === 'clearAll') {
                     actorManager.clearActuators();
                     actorManager.clearCollectors();
@@ -2185,9 +1794,11 @@
 
         // Helper: get current state of toggle
         function getToggleState(action) {
-            if (action === 'toggleDemo') return demoMode;
-            if (action === 'captureTab') return tabAudioActive;
-            if (action === 'toggleMic') return micActive;
+            const audioState = sourceManager ? sourceManager.getAudioState() : {};
+            if (action === 'toggleDemo') return audioState.demoMode || false;
+            if (action === 'captureTabAudio') return audioState.tabAudioActive || false;
+            if (action === 'captureTab') return audioState.tabAudioActive || false;  // legacy
+            if (action === 'toggleMic' || action === 'micInput') return audioState.micActive || false;
             if (action === 'toggleWireframe') return material.wireframe;
             if (action === 'freezePhysics') return physicsFrozen;
             return false;

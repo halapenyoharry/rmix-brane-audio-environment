@@ -41,33 +41,51 @@
                 // Demo sine waves
                 const time = Date.now() * 0.001;
                 force = Math.sin(time * 2 + this.demoPhase) * 2;
-            } else if (deps.audioEnabled && deps.leftAudioData && deps.rightAudioData) {
-                // Use actual audio samples from correct channel
-                let sum = 0;
-                let audioData;
+            } else if (deps.audioEnabled) {
+                // CRITICAL (Thing 2): Read audio data from sourceManager.getAudioData()
+                // instead of relying on deps passed via updateDeps()
+                let leftAudioData = null;
+                let rightAudioData = null;
 
-                // Select the correct channel data
-                if (this.channel === 'left') {
-                    audioData = deps.leftAudioData;
-                } else if (this.channel === 'right') {
-                    audioData = deps.rightAudioData;
+                // Get audio buffers from sourceManager getter
+                const sourceManager = _getSourceManager();
+                if (sourceManager && sourceManager.getAudioData) {
+                    const audioData = sourceManager.getAudioData();
+                    leftAudioData = audioData.left;
+                    rightAudioData = audioData.right;
                 } else {
-                    // Mono - mix both channels
-                    for (let i = 0; i < deps.leftAudioData.length; i++) {
-                        sum += deps.leftAudioData[i] + deps.rightAudioData[i];
-                    }
-                    const avg = sum / (deps.leftAudioData.length * 2);
-                    force = avg * window.actuatorGain;
-                    audioData = null;
+                    // Fallback to deps if sourceManager not available (e.g., during init)
+                    leftAudioData = deps.leftAudioData;
+                    rightAudioData = deps.rightAudioData;
                 }
 
-                // Process single channel (left or right)
-                if (audioData) {
-                    for (let i = 0; i < audioData.length; i++) {
-                        sum += audioData[i];
+                if (leftAudioData && rightAudioData) {
+                    let sum = 0;
+                    let audioData;
+
+                    // Select the correct channel data
+                    if (this.channel === 'left') {
+                        audioData = leftAudioData;
+                    } else if (this.channel === 'right') {
+                        audioData = rightAudioData;
+                    } else {
+                        // Mono - mix both channels
+                        for (let i = 0; i < leftAudioData.length; i++) {
+                            sum += leftAudioData[i] + rightAudioData[i];
+                        }
+                        const avg = sum / (leftAudioData.length * 2);
+                        force = avg * window.actuatorGain;
+                        audioData = null;
                     }
-                    const avg = sum / audioData.length;
-                    force = avg * window.actuatorGain;
+
+                    // Process single channel (left or right)
+                    if (audioData) {
+                        for (let i = 0; i < audioData.length; i++) {
+                            sum += audioData[i];
+                        }
+                        const avg = sum / audioData.length;
+                        force = avg * window.actuatorGain;
+                    }
                 }
             }
 
@@ -189,6 +207,7 @@
         const _updateMiniMembrane = options.updateMiniMembrane || (() => {});
         const _mapper = options.mapper || null;
         const _getWorklet = options.getWorklet || (() => null);
+        const _getSourceManager = options.getSourceManager || (() => null);
 
         // Dependencies passed to Actuator/Collector methods
         const deps = {
