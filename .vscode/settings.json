@@ -1,11 +1,11 @@
 {
   "files.insertFinalNewline": true,
   "files.trimTrailingWhitespace": true,
-  "editor.minimap.enabled": false,
+  "editor.minimap.enabled": true,
   "editor.wordWrap": "off",
   "editor.formatOnSave": false,
   "liveServer.settings.host": "127.0.0.1",
-  "liveServer.settings.port": 8765,
+  "liveServer.settings.port": 8766,
   "liveServer.settings.root": "/",
   "search.exclude": {
     "**/archive/old-docs/**": true,

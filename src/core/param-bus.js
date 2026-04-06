@@ -16,9 +16,9 @@
  */
 
 const PARAM_DEFAULTS = {
-    membrane_wave_speed:    0.3,
-    membrane_damping:       0.00265,
-    membrane_actuator_gain: 3.0,
+    membrane_wave_speed:    0.0123,
+    membrane_damping:       0.000148,
+    membrane_actuator_gain: 15.0,
     display_smoothing:      0.3,
 };
 

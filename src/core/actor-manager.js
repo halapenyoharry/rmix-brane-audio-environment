@@ -430,6 +430,8 @@
             updateDeps,
             applyActuators,
             sampleAllCollectors,
+            syncActuatorsToWorklet,
+            syncCollectorsToWorklet,
             getActuators: () => actuators,
             getCollectors: () => collectors
         };

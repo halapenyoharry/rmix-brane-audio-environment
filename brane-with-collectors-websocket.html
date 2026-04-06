@@ -411,8 +411,10 @@
                     workletSnapshot = snapshot;
                 };
 
-                // Actor manager syncs actuators/collectors automatically
-                // (happens inside addActuator/addCollector/clear operations)
+                // Sync initial actuator/collector state to worklet
+                // (manager also syncs on add/remove, but we need the initial state)
+                actorManager.syncActuatorsToWorklet();
+                actorManager.syncCollectorsToWorklet();
 
                 // Match snapshot rate to actual display refresh rate
                 membraneWorklet.syncToDisplayRate();
