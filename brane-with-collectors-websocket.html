@@ -285,6 +285,7 @@
     <script src="three.min.js"></script>
     <script src="OrbitControls.js"></script>
     <script src="src/visual/renderer.js"></script>
+    <script src="src/core/actor-manager.js"></script>
 
     <!-- Load D3.js for UI controls -->
     <script src="https://d3js.org/d3.v7.min.js" crossorigin="anonymous"></script>
@@ -323,6 +324,13 @@
         const { scene, camera, renderer, controls, membrane, material } =
             window._renderer.init(document.getElementById('canvas-container'));
 
+        // Membrane grid constants (used by physics, actuators, collectors)
+        let gridSize = 100;
+        const membraneSize = 200;
+
+        // Actor manager will be initialized after physics is set up
+        let actorManager = null;
+
         // Performance monitor (press P to toggle)
         const stats = new Stats();
         stats.domElement.style.cssText = 'position:fixed;bottom:0;left:0;cursor:pointer;opacity:0.9;z-index:10000;display:none;transform:scale(2);transform-origin:bottom left;';
@@ -357,21 +365,17 @@
                 if (perfLog.spikes.length > 0) {
                     console.log('Recent spikes:', perfLog.spikes.slice(-10));
                 }
-                console.log(`Grid: ${gridSize}x${gridSize}, Actuators: ${actuators.length}, Collectors: ${collectors.length}`);
+                console.log(`Grid: ${gridSize}x${gridSize}, Actuators: ${actorManager ? actorManager.getActuators().length : 0}, Collectors: ${actorManager ? actorManager.getCollectors().length : 0}`);
                 console.log('===================');
             }
         });
-
-        // Membrane grid constants (used by physics, actuators, collectors)
-        let gridSize = 100;
-        const membraneSize = 200;
 
         // Physics Engine Integration
         const physics = new MembranePhysics({
             gridSize: gridSize,
             membraneSize: membraneSize,
-            waveSpeed: 0.3,
-            damping: 0.00265,
+            waveSpeed: 0.0123,
+            damping: 0.000148,
             boundaryType: 'fixed'
         });
 
@@ -380,7 +384,7 @@
         // Main thread only reads height snapshots for rendering.
         let membraneWorklet = null;
         let workletSnapshot = null; // Float32Array from worklet, flat layout
-        let workletGridSize = 32;   // Worklet runs at smaller grid; GPU upsamples for visuals
+        let workletGridSize = 24;   // Reduced from 32 for GPU efficiency; GPU upsamples for visuals
 
         /**
          * Initialize the AudioWorklet physics engine.
@@ -407,9 +411,8 @@
                     workletSnapshot = snapshot;
                 };
 
-                // Sync any existing actuators/collectors
-                syncActuatorsToWorklet();
-                syncCollectorsToWorklet();
+                // Actor manager syncs actuators/collectors automatically
+                // (happens inside addActuator/addCollector/clear operations)
 
                 // Match snapshot rate to actual display refresh rate
                 membraneWorklet.syncToDisplayRate();
@@ -430,46 +433,17 @@
             sourceNode.connect(membraneWorklet.node);
         }
 
-        /**
-         * Send current actuator positions to the worklet.
-         */
-        function syncActuatorsToWorklet() {
-            if (!membraneWorklet) return;
-            const scale = workletGridSize / gridSize; // Map from render grid to worklet grid
-            membraneWorklet.setActuators(actuators.map(a => ({
-                gridX: Math.round(a.gridX * scale),
-                gridY: Math.round(a.gridY * scale),
-                radius: Math.max(3, Math.round(a.baseSize * 1.5 * scale)),
-                channel: a.channel
-            })));
-        }
-
-        /**
-         * Send current collector positions to the worklet.
-         */
-        function syncCollectorsToWorklet() {
-            if (!membraneWorklet) return;
-            const scale = workletGridSize / gridSize;
-            membraneWorklet.setCollectors(collectors.map(c => ({
-                gridX: Math.round(c.gridX * scale),
-                gridY: Math.round(c.gridY * scale),
-                mode: c.mode
-            })));
-        }
 
         // Initialize UI variables on window for D3 binding
         window.waveSpeed = physics.waveSpeed;
         window.damping = physics.damping;
-        window.actuatorGain = 3.0; // Use window directly for gain
+        window.actuatorGain = 15.0; // Use window directly for gain
 
         function initializeArrays() {
             physics.initializeArrays();
         }
 
-        // Actuator and Collector system
-        // Note: we just use window.actuatorGain above instead of a duplicate local variable
-        let actuators = [];
-        let collectors = [];
+        // Audio and actor system state
         let audioEnabled = false;
         let demoMode = false;
         let audioContext = null;
@@ -514,179 +488,25 @@
         let visualizerAnalyser = null;
         let visualizerAnimationId = null;
 
-        // Actuator class
-        class Actuator {
-            constructor(x, y, channel = 'mono') {
-                this.x = x;
-                this.y = y;
-                this.gridX = Math.round(((y + membraneSize/2) / membraneSize) * gridSize);
-                this.gridY = Math.round(((x + membraneSize/2) / membraneSize) * gridSize);
-                this.channel = channel;
-                this.gain = 1.0;
-                this.visual = null;
-                this.demoPhase = Math.random() * Math.PI * 2;
-
-                // Visual properties
-                this.currentAmplitude = 0;
-                this.baseSize = 2.0; // Visual radius
-                this.baseColor = new THREE.Color();
-
-                // Assign mapped properties (random size for variety since we don't have drag-size yet)
-                // Use deterministic random based on position so it doesn't flicker on reload if we saved
-                const seed = Math.abs(x * y * 1000);
-                const randomSize = 15 + (seed % 35); // 15-50mm range
-
-                if (mapper) {
-                    const freq = mapper.sizeToFrequency(randomSize);
-                    const hue = mapper.frequencyToColor(freq);
-                    this.baseColor.setHSL(hue / 360, 1.0, 0.5);
-                } else {
-                    // Fallback colors if mapper not ready
-                    if (channel === 'left') this.baseColor.setHex(0xff00ff);
-                    else if (channel === 'right') this.baseColor.setHex(0x00ffff);
-                    else this.baseColor.setHex(0xffff00);
-                }
+        // Initialize actor manager
+        actorManager = window._actorManager.init(
+            scene,
+            camera,
+            membrane,
+            physics,
+            {
+                updateMiniMembrane: updateMiniMembrane,
+                mapper: mapper,
+                gridSize: gridSize,
+                membraneSize: membraneSize,
+                getWorklet: () => membraneWorklet
             }
+        );
 
-            apply() {
-                let force = 0;
-
-                if (demoMode) {
-                    // Demo sine waves
-                    const time = Date.now() * 0.001;
-                    force = Math.sin(time * 2 + this.demoPhase) * 2;
-                } else if (audioEnabled && leftAudioData && rightAudioData) {
-                    // Use actual audio samples from correct channel
-                    let sum = 0;
-                    let audioData;
-
-                    // Select the correct channel data
-                    if (this.channel === 'left') {
-                        audioData = leftAudioData;
-                    } else if (this.channel === 'right') {
-                        audioData = rightAudioData;
-                    } else {
-                        // Mono - mix both channels
-                        // Average samples from both L and R
-                        for (let i = 0; i < leftAudioData.length; i++) {
-                            sum += leftAudioData[i] + rightAudioData[i];
-                        }
-                        const avg = sum / (leftAudioData.length * 2);
-                        force = avg * window.actuatorGain;
-                        audioData = null;  // Skip single-channel processing below
-                    }
-
-                    // Process single channel (left or right)
-                    if (audioData) {
-                        for (let i = 0; i < audioData.length; i++) {
-                            sum += audioData[i];
-                        }
-                        const avg = sum / audioData.length;
-                        force = avg * window.actuatorGain;
-                    }
-                }
-
-                // Store amplitude for visual pulsing (smoothed)
-                const targetAmp = Math.abs(force);
-                this.currentAmplitude += (targetAmp - this.currentAmplitude) * 0.2;
-
-                // Apply force to membrane as an actuator
-                if (this.gridX >= 0 && this.gridX <= gridSize &&
-                    this.gridY >= 0 && this.gridY <= gridSize) {
-
-                    // Height above membrane drives coupling strength (inverse square)
-                    const memSurface = physics.heights[this.gridX] && physics.heights[this.gridX][this.gridY]
-                        ? physics.heights[this.gridX][this.gridY] : 0;
-                    const height = Math.max(0.5, 2 + memSurface * 0.8);
-                    const heightGain = 4.0 / (1 + Math.pow(height / 4.0, 2));
-                    const scaledForce = force * heightGain;
-
-                    // Gaussian spread — size drives footprint radius
-                    const fRadius = Math.max(2, Math.round(this.baseSize * 1.5));
-                    for (let i = -fRadius; i <= fRadius; i++) {
-                        for (let j = -fRadius; j <= fRadius; j++) {
-                            const gi = this.gridX + i;
-                            const gj = this.gridY + j;
-                            if (gi >= 0 && gi <= gridSize && gj >= 0 && gj <= gridSize) {
-                                const gaussian = Math.exp(-(i*i + j*j) / (fRadius * fRadius * 0.5));
-                                physics.velocities[gi][gj] += scaledForce * gaussian * 0.1;
-                            }
-                        }
-                    }
-
-                    if (this.visual) {
-                        this.updateVisual();
-                    }
-                }
-            }
-
-            updateVisual() {
-                if (!this.visual) return;
-
-                // Track membrane surface — piston motion
-                const memHeight = physics.heights[this.gridX] && physics.heights[this.gridX][this.gridY]
-                    ? physics.heights[this.gridX][this.gridY] : 0;
-                this.visual.position.y = 2 + memHeight * 0.8;
-
-                // Opacity pulses with amplitude — size stays fixed (size = frequency/footprint)
-                this.visual.material.opacity = 0.6 + (this.currentAmplitude * 0.4);
-            }
-        }
-
-        // Collector class - samples membrane to produce audio
-        class Collector {
-            constructor(x, y, config = {}) {
-                this.x = x;
-                this.y = y;
-                this.gridX = Math.round(((y + membraneSize/2) / membraneSize) * gridSize);
-                this.gridY = Math.round(((x + membraneSize/2) / membraneSize) * gridSize);
-
-                // Universal settings
-                this.mode = config.mode || 'velocity';  // 'displacement', 'velocity', 'acceleration'
-                this.gain = config.gain || 50.0;  // Increased from 5.0
-                this.name = config.name || 'collector';
-                this.channel = config.channel || 'mono'; // 'left', 'right', 'mono'
-                this.visual = null;
-
-                // For debugging
-                this.lastSample = 0;
-                this.peakLevel = 0;
-            }
-
-            sample() {
-                let signal = 0;
-
-                // Read membrane state based on mode
-                if (this.gridX >= 0 && this.gridX <= gridSize &&
-                    this.gridY >= 0 && this.gridY <= gridSize) {
-
-                    switch(this.mode) {
-                        case 'displacement':
-                            signal = physics.heights[this.gridX][this.gridY];
-                            break;
-                        case 'velocity':
-                            signal = physics.velocities[this.gridX][this.gridY];
-                            break;
-                        case 'acceleration':
-                            // TODO: compute from velocity derivative
-                            signal = physics.velocities[this.gridX][this.gridY];
-                            break;
-                    }
-                }
-
-                // Apply gain
-                signal *= this.gain;
-
-                // Clamp to audio range
-                signal = Math.max(-1.0, Math.min(1.0, signal));
-
-                // Track for visualization
-                this.lastSample = signal;
-                this.peakLevel = Math.max(this.peakLevel * 0.99, Math.abs(signal));
-
-                return signal;
-            }
-        }
+        // Attach click listener to renderer
+        renderer.domElement.addEventListener('click', (event) => {
+            actorManager.handleClick(event);
+        });
 
         // Helper functions for membrane operations
         function resetMembrane() {
@@ -915,27 +735,10 @@
             // Bilinear upsampling in updatePhysics() handles the mismatch
 
             // Clear actuators/collectors — their grid coords are now stale
-            clearActuators();
-            clearCollectors();
+            actorManager.clearActuators();
+            actorManager.clearCollectors();
         }
 
-        function clearActuators() {
-            actuators.forEach(act => {
-                if (act.visual) scene.remove(act.visual);
-            });
-            actuators = [];
-            updateMiniMembrane();
-            syncActuatorsToWorklet();
-        }
-
-        function clearCollectors() {
-            collectors.forEach(col => {
-                if (col.visual) scene.remove(col.visual);
-            });
-            collectors = [];
-            updateMiniMembrane();
-            syncCollectorsToWorklet();
-        }
 
         // Audio control wrappers for tiles
         function loadAudioFile() {
@@ -943,56 +746,6 @@
             // Update will happen in initAudioFile callback
         }
 
-        // Add actuator
-        function addActuator(x, y, channel = 'mono') {
-            const actuator = new Actuator(x, y, channel);
-            actuators.push(actuator);
-
-            // Use the baseColor determined in constructor (via mapper or fallback)
-            const material = new THREE.MeshBasicMaterial({
-                color: actuator.baseColor,
-                transparent: true,
-                opacity: 0.7
-            });
-
-            const indicator = new THREE.Mesh(
-                new THREE.SphereGeometry(2, 16, 16),
-                material
-            );
-            indicator.position.set(x, 2, y);
-            scene.add(indicator);
-            actuator.visual = indicator;
-
-            updateMiniMembrane();
-            syncActuatorsToWorklet();
-            return actuator;
-        }
-
-        // Add collector
-        function addCollector(x, y, config = {}) {
-            const collector = new Collector(x, y, config);
-            collectors.push(collector);
-
-            // Green wireframe sphere to distinguish from actuators
-            const color = config.channel === 'left' ? 0x00ff00 : (config.channel === 'right' ? 0x00ff88 : 0x00ff44);
-            const indicator = new THREE.Mesh(
-                new THREE.SphereGeometry(1.5, 16, 16),
-                new THREE.MeshBasicMaterial({
-                    color: color,
-                    wireframe: true,
-                    transparent: true,
-                    opacity: 0.8
-                })
-            );
-            indicator.position.set(x, 4, y); // Higher than actuators
-            scene.add(indicator);
-            collector.visual = indicator;
-
-            updateMiniMembrane();
-            syncCollectorsToWorklet();
-            console.log(`Added collector at (${x.toFixed(1)}, ${y.toFixed(1)}) - ${config.channel || 'mono'} - ${config.mode || 'velocity'}`);
-            return collector;
-        }
 
         // Initialize audio file playback
         function initAudioFile() {
@@ -1545,22 +1298,9 @@
                 const outputR = e.outputBuffer.getChannelData(1);
 
                 // Sample collectors once per buffer (not per sample)
-                let targetLeft = 0;
-                let targetRight = 0;
-
-                collectors.forEach(collector => {
-                    const sample = collector.sample();
-
-                    if (collector.channel === 'left') {
-                        targetLeft += sample;
-                    } else if (collector.channel === 'right') {
-                        targetRight += sample;
-                    } else {
-                        // Mono - send to both
-                        targetLeft += sample;
-                        targetRight += sample;
-                    }
-                });
+                const samples = actorManager.sampleAllCollectors();
+                let targetLeft = samples.left;
+                let targetRight = samples.right;
 
                 // Interpolate from last to target
                 for (let i = 0; i < outputL.length; i++) {
@@ -1634,70 +1374,6 @@
             }
         }
 
-        // Mouse interaction
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-
-        renderer.domElement.addEventListener('click', (event) => {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            raycaster.setFromCamera(mouse, camera);
-
-            // First check if clicking on actuator or collector to remove
-            let clickedSphere = false;
-
-            // Check actuators
-            for (let i = actuators.length - 1; i >= 0; i--) {
-                if (actuators[i].visual) {
-                    const intersects = raycaster.intersectObject(actuators[i].visual);
-                    if (intersects.length > 0) {
-                        scene.remove(actuators[i].visual);
-                        actuators.splice(i, 1);
-                        updateMiniMembrane();
-                        syncActuatorsToWorklet();
-                        clickedSphere = true;
-                        break;
-                    }
-                }
-            }
-
-            // Check collectors if no actuator was clicked
-            if (!clickedSphere) {
-                for (let i = collectors.length - 1; i >= 0; i--) {
-                    if (collectors[i].visual) {
-                        const intersects = raycaster.intersectObject(collectors[i].visual);
-                        if (intersects.length > 0) {
-                            scene.remove(collectors[i].visual);
-                            collectors.splice(i, 1);
-                            updateMiniMembrane();
-                            syncCollectorsToWorklet();
-                            clickedSphere = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // If no sphere clicked, add new one on membrane
-            if (!clickedSphere) {
-                const intersects = raycaster.intersectObject(membrane);
-
-                if (intersects.length > 0) {
-                    const point = intersects[0].point;
-                    let channel = 'mono';
-                    if (point.x < -20) channel = 'left';
-                    else if (point.x > 20) channel = 'right';
-
-                    // Shift+Click adds collector, regular click adds actuator
-                    if (event.shiftKey) {
-                        addCollector(point.x, point.z, { channel: channel });
-                    } else {
-                        addActuator(point.x, point.z, channel);
-                    }
-                }
-            }
-        });
 
         // ── Demo Mode ───────────────────────────────────────────────
         function toggleDemo() {
@@ -1774,9 +1450,9 @@
             } else if (e.key === 'r' || e.key === 'R') {
                 resetMembrane();
             } else if (e.key === 'c' || e.key === 'C') {
-                clearActuators();
+                actorManager.clearActuators();
             } else if (e.key === 'm' || e.key === 'M') {
-                clearCollectors();
+                actorManager.clearCollectors();
             }
         });
 
@@ -1826,31 +1502,24 @@
             // Update audio data (for visualizers + fallback actuators)
             updateAudioData();
 
+            // Update actor manager's runtime dependencies
+            actorManager.updateDeps({
+                demoMode: demoMode,
+                audioEnabled: audioEnabled,
+                leftAudioData: leftAudioData,
+                rightAudioData: rightAudioData
+            });
+
             // Update audio visualizers on tiles
             updateAudioVisualizers();
 
             // Apply actuators on main thread only when worklet is NOT active
             // (when worklet runs, audio flows directly into physics via input channels)
             if (!membraneWorklet) {
-                actuators.forEach(actuator => {
-                    actuator.apply();
-                });
+                actorManager.applyActuators();
             } else {
                 // Worklet owns physics — update actuator visuals from snapshot heights
-                actuators.forEach(actuator => {
-                    if (!actuator.visual || !workletSnapshot) return;
-                    const ws = workletGridSize;
-                    const wStride = ws + 1;
-                    // Map actuator grid coords to worklet grid
-                    const scale = ws / gridSize;
-                    const wi = Math.round(actuator.gridX * scale);
-                    const wj = Math.round(actuator.gridY * scale);
-                    if (wi >= 0 && wi <= ws && wj >= 0 && wj <= ws) {
-                        const memHeight = workletSnapshot[wi * wStride + wj];
-                        const waveH = material.uniforms.waveHeight.value;
-                        actuator.visual.position.y = memHeight * waveH;
-                    }
-                });
+                actorManager.updateVisualsFromSnapshot(workletSnapshot, workletGridSize, gridSize);
             }
 
             updatePhysics();
@@ -2117,8 +1786,8 @@
                 } else if (tileData.action === 'playLoop') {
                     playLoop();
                 } else if (tileData.action === 'clearAll') {
-                    clearActuators();
-                    clearCollectors();
+                    actorManager.clearActuators();
+                    actorManager.clearCollectors();
                 } else if (tileData.action === 'exportHeightmap') {
                     window.exportHeightmap();
                 } else if (tileData.action === 'toggleFullscreen') {
@@ -2785,7 +2454,7 @@
             // Map actuators to SVG coordinates
             const scale = 100 / membraneSize;
 
-            actuators.forEach(act => {
+            actorManager.getActuators().forEach(act => {
                 const cx = (act.x + membraneSize/2) * scale;
                 const cy = (act.y + membraneSize/2) * scale;
                 const color = act.channel === 'left' ? '#ff00ff' : (act.channel === 'right' ? '#00ffff' : '#ffff00');
@@ -2798,7 +2467,7 @@
                 svg.appendChild(circle);
             });
 
-            collectors.forEach(col => {
+            actorManager.getCollectors().forEach(col => {
                 const cx = (col.x + membraneSize/2) * scale;
                 const cy = (col.y + membraneSize/2) * scale;
 
