@@ -27,7 +27,7 @@
       "args": [
         "-a",
         "Google Chrome",
-        "http://127.0.0.1:8765/brane-with-collectors-websocket.html"
+        "http://127.0.0.1:8765/brane.html"
       ],
       "problemMatcher": []
     }

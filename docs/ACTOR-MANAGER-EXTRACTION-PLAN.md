@@ -9,7 +9,7 @@
 
 ## Context
 
-The monolith (`brane-with-collectors-websocket.html`, ~3000 lines) contains all
+The monolith (`brane.html`, ~3000 lines) contains all
 actuator and collector management inline: class definitions, add/clear operations,
 grid-space synchronization to the worklet, visual sphere creation, raycaster click
 handling for placement and removal, and two-way updates with the mini-membrane
@@ -592,13 +592,13 @@ function animate() {
 ```
 
 **Acceptance:**
-- `grep -n "class Actuator\|class Collector\|function addActuator\|function addCollector\|function syncActuators\|function syncCollectors" brane-with-collectors-websocket.html` returns zero hits
-- `grep -n "const raycaster\|const mouse" brane-with-collectors-websocket.html` returns zero hits (moved to manager)
+- `grep -n "class Actuator\|class Collector\|function addActuator\|function addCollector\|function syncActuators\|function syncCollectors" brane.html` returns zero hits
+- `grep -n "const raycaster\|const mouse" brane.html` returns zero hits (moved to manager)
 
 ### Step 10: Commit checkpoint
 
 ```bash
-git add src/core/actor-manager.js brane-with-collectors-websocket.html
+git add src/core/actor-manager.js brane.html
 git commit -m "refactor: extract actuator/collector management into src/core/actor-manager.js
 
 Moves Actuator and Collector class definitions, add/clear/sync operations,
@@ -696,6 +696,6 @@ After Claude Code completes Steps 1–10:
 - [ ] Drag grid-size slider — actors are cleared (grid coords become stale)
 - [ ] Freeze button works (waves stop, geometry is static)
 - [ ] No console errors related to actors, raycasting, or undefined
-- [ ] `grep "class Actuator\|class Collector\|function addActuator" brane-with-collectors-websocket.html` returns zero hits
+- [ ] `grep "class Actuator\|class Collector\|function addActuator" brane.html` returns zero hits
 - [ ] `src/core/actor-manager.js` contains class defs, init(), and API exports
 - [ ] Monolith is ~200 lines shorter (verify with `wc -l`)

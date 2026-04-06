@@ -9,7 +9,7 @@
 
 ## Context
 
-The monolith (`brane-with-collectors-websocket.html`, ~2500 lines) contains all audio source
+The monolith (`brane.html`, ~2500 lines) contains all audio source
 management inline: microphone input (via MicrophoneInput helper), tab audio capture (via
 getDisplayMedia), file input (via file picker), and demo loops (local audio files). Each
 source initializes its own Web Audio graph, creates analysers for visualization and actor
@@ -470,7 +470,7 @@ After Steps 4–7, the following monolith code is dead:
 
 Verify with:
 ```bash
-grep -n "function toggleMic\|function captureTabAudio\|function playLoop\|function toggleDemo\|function initAudioFile" brane-with-collectors-websocket.html
+grep -n "function toggleMic\|function captureTabAudio\|function playLoop\|function toggleDemo\|function initAudioFile" brane.html
 ```
 Should return zero hits.
 
@@ -482,7 +482,7 @@ Should return zero hits.
 ### Step 9: Commit checkpoint
 
 ```bash
-git add src/audio/source-manager.js brane-with-collectors-websocket.html
+git add src/audio/source-manager.js brane.html
 git commit -m "refactor: extract audio source management into src/audio/source-manager.js
 
 Moves microphone input (via MicrophoneInput), tab audio capture (via

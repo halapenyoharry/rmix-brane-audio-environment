@@ -250,7 +250,7 @@ membraneWorklet = new MembraneWorkletNode(audioContext, {
 ### Step 7: Commit checkpoint
 
 ```bash
-git add src/core/param-bus.js brane-with-collectors-websocket.html
+git add src/core/param-bus.js brane.html
 git commit -m "feat: introduce ParamBus as single parameter authority
 
 Replaces window globals (waveSpeed, damping, actuatorGain, displaySmoothing)

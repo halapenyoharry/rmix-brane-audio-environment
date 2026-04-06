@@ -9,7 +9,7 @@
 
 ## Context
 
-The monolith (`brane-with-collectors-websocket.html`, 2992 lines) contains all
+The monolith (`brane.html`, 2992 lines) contains all
 Three.js rendering logic inline: scene setup, camera, lighting, shader material,
 geometry creation, mesh update (including bilinear upsampling from worklet grid),
 orbit controls, resize handling, and the render call itself.
@@ -466,7 +466,7 @@ itself is not being extracted in this slice.
 ### Step 9: Commit checkpoint
 
 ```bash
-git add src/visual/renderer.js brane-with-collectors-websocket.html
+git add src/visual/renderer.js brane.html
 git commit -m "refactor: extract Three.js renderer into src/visual/renderer.js
 
 Moves scene setup, camera, lighting, shader material, geometry, membrane

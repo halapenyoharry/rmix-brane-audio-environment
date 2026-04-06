@@ -69,7 +69,7 @@ docker compose down
 python3 -m http.server 8765
 ```
 
-Open `http://127.0.0.1:8765/brane-with-collectors-websocket.html` in Chrome or Firefox.
+Open `http://127.0.0.1:8765/brane.html` in Chrome or Firefox.
 
 The app must be served over HTTP — `file://` won't work due to ES module and Web Audio API restrictions.
 
@@ -90,7 +90,7 @@ The app must be served over HTTP — `file://` won't work due to ES module and W
 
 | File | Purpose |
 |------|---------|
-| `brane-with-collectors-websocket.html` | Main application |
+| `brane.html` | Main application |
 | `membrane-physics-core.js` | Wave equation solver (do not modify) |
 | `tiles-config.json` | UI control configuration |
 | `default-session.json` | Session state schema |
