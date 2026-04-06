@@ -547,7 +547,105 @@ to do" constraints.
 
 ---
 
-## 10. Commit History (Architecture Milestones)
+## 10. Current State (2026-04-06)
+
+Since 2026-03-27, three major extraction slices have been completed. The
+monolith is now ~2100 lines (down from ~3000). All legacy bridges remain intact;
+the app is fully functional.
+
+### 10.1 Mechanical Extraction Pattern Established
+
+Locations:
+
+- `src/visual/renderer.js` (extracted 2026-04-02)
+- `src/core/actor-manager.js` (extracted 2026-04-04)
+- `src/audio/source-manager.js` (extracted 2026-04-06)
+
+What changed:
+
+- **Renderer**: Scene, camera, lighting, shader material, geometry. Exports
+  `init(container)` returning scene/camera/renderer/controls/membrane/material.
+  Mesh updates via `updateMesh(snapshot, workletGridSize, monolithGridSize)` with
+  bilinear upsampling. Handles resize. Classic script + IIFE pattern.
+
+- **Actor Manager**: Actuator/Collector classes, add/remove/sync operations.
+  Raycaster click handling. Exports control methods (handleClick, updateDeps,
+  applyActuators, sampleAllCollectors) and getters (getActuators, getCollectors).
+  Auto-syncs to worklet on structural change. Uses getter pattern for async
+  worklet reference. Classic script + IIFE.
+
+- **Audio Source Manager**: Mic input, tab capture, file input, demo loops, demo
+  oscillator. Owns AudioContext lifecycle (lazy-init), analyser creation,
+  sample buffers. Exports control methods (toggleMic, captureTabAudio, selectFile,
+  playLoop, toggleDemo) and state getters (getAudioContext, getAnalysers,
+  getAudioData, getAudioState). **CRITICAL FIXES**: (1) Sets `window.audioContext`
+  as legacy bridge so initWorklet/keyboard/collector continue working without
+  modification. (2) Exposes `getAudioData()` returning { left, right } buffers;
+  actor-manager reads from sourceManager internally instead of relying on
+  monolith to pass buffers via updateDeps(). Classic script + IIFE.
+
+Why it matters:
+
+- Three extraction slices are now verified and working.
+- The pattern (classic script + IIFE, module-scoped state, simple public API,
+  getter pattern for async references) is proven and repeatable.
+- Actor manager's internal `getAudioData()` consumption prevents the
+  error-prone pattern of the monolith forgetting to pass buffers.
+- AudioContext bridge allows existing code to continue referencing
+  `window.audioContext` without requiring massive downstream refactors.
+
+Current state of monolith:
+
+- ~2100 lines (was ~3000, -30% reduction)
+- Contains: tile layout (D3 binding), keyboard instrument (MIDI key capture,
+  oscillator pools), collector audio output (ScriptProcessor fallback),
+  visualizer drawing (spectrum canvas), animate loop, misc UI setup/cleanup.
+- No longer owns: renderer, actor system, audio sources.
+- All legacy bridges intact (window.paramBus, window.audioContext,
+  window.waveSpeed etc. as mirrors).
+
+### 10.2 Pod Runtime Remains Dormant (Not Integrated)
+
+Locations:
+
+- `src/pod-runtime.js`
+- `src/pods/`
+
+Current status:
+
+- The pod runtime and slider pods exist in source but are not wired into
+  brane.html.
+- They remain as reference implementations for the future pod redesign.
+- No pod `update()` or `render()` calls exist in the animation loop.
+- No pod persistence path is live.
+
+Why this is OK:
+
+- Slices 0–2 (Renderer, Actors, Audio) are mechanical extractions with clear
+  boundaries — they required no pod rethinking.
+- Slices 3–5 (Tiles, Pod Redesign, Pod Integration) require architectural
+  decisions about how pods declare their io (ParamBus params, worklet ports) and
+  state serialization.
+- Extracting tiles and pods before deciding how they fit in the
+  ParamBus + worklet model would create technical debt.
+
+### 10.3 File Rename: brane-with-collectors-websocket.html → brane.html
+
+What changed:
+
+- Main HTML file renamed via `git mv` (git tracks it as a proper rename).
+- All references updated in docs, README, and config files.
+- `index.html` redirect updated.
+
+Why it matters:
+
+- The filename now reflects the maturity of the system (no longer describing a
+  temporary architecture experiment).
+- Cleaner URLs and cleaner mental model.
+
+---
+
+## 11. Commit History (Architecture Milestones)
 
 - `8d5d32b` — AudioWorklet physics engine: membrane simulation at sample rate
 - `5f5e2ca` — Glue-coupled actuators, adaptive display smoothing, physics controls
