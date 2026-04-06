@@ -450,7 +450,11 @@
         // Initialize source manager first — audio sources, analysers, audioContext
         sourceManager = window._sourceManager.init({
             updateToggleStates: updateToggleStates,
-            getWorklet: () => membraneWorklet
+            getWorklet: () => membraneWorklet,
+            ensureWorklet: async () => {
+                await initWorklet();
+                return membraneWorklet;
+            }
         });
 
         // Initialize actor manager (now that sourceManager is ready)
@@ -719,8 +723,8 @@
             // sourceManager.stopTabAudio() is called internally by captureTabAudio()
         }
 
-        function playLoop() {
-            sourceManager.playLoop();
+        async function playLoop() {
+            await sourceManager.playLoop();
         }
 
         // ─── Keyboard Instrument (Raw Oscillators) ──────────────────────
@@ -1038,8 +1042,8 @@
 
 
         // Demo mode delegated to sourceManager
-        function toggleDemo() {
-            sourceManager.toggleDemo();
+        async function toggleDemo() {
+            await sourceManager.toggleDemo();
         }
 
         // Keyboard controls
@@ -1064,7 +1068,7 @@
                 // Load audio file
                 sourceManager.selectFile();
             } else if (e.key === 'd' || e.key === 'D') {
-                toggleDemo();
+                toggleDemo();  // toggleDemo() is async but we don't block on it
             } else if (e.key === 'r' || e.key === 'R') {
                 resetMembrane();
             } else if (e.key === 'c' || e.key === 'C') {
@@ -1391,11 +1395,11 @@
                 button.waveformCanvas = canvas;
             }
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', async () => {
                 if (tileData.action === 'selectFile' || tileData.action === 'loadFile') {
                     sourceManager.selectFile();
                 } else if (tileData.action === 'playLoop') {
-                    sourceManager.playLoop();
+                    await sourceManager.playLoop();
                 } else if (tileData.action === 'clearAll') {
                     actorManager.clearActuators();
                     actorManager.clearCollectors();

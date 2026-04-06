@@ -72,15 +72,23 @@
     const demoLoops = ['bass.wav', 'drums.wav', 'kick.wav'];
 
     // ─── Connect Source to Worklet ────────────────────────────────────
-    function connectSourceToWorklet(sourceNode) {
-        const worklet = _getWorklet();
-        if (!worklet || !worklet.node) return;
+    async function connectSourceToWorklet(sourceNode) {
+        let worklet = _getWorklet();
+        if (!worklet || !worklet.node) {
+            // Worklet not yet initialized — create it now
+            worklet = await _ensureWorklet();
+        }
+        if (!worklet || !worklet.node) {
+            console.warn('connectSourceToWorklet: worklet still unavailable after ensureWorklet');
+            return;
+        }
         sourceNode.connect(worklet.node);
     }
 
     // ─── Callbacks and Getters ────────────────────────────────────────
     let _updateToggleStates = () => {};
     let _getWorklet = () => null;
+    let _ensureWorklet = async () => null;
 
     // ─── Control Methods (called by tile handlers) ────────────────────
 
@@ -113,7 +121,7 @@
                 }
 
                 if (micInput.sourceNode) {
-                    connectSourceToWorklet(micInput.sourceNode);
+                    await connectSourceToWorklet(micInput.sourceNode);
                 }
 
                 console.log('Microphone input started');
@@ -185,7 +193,7 @@
             leftAudioData = new Float32Array(leftAnalyser.fftSize);
             rightAudioData = new Float32Array(rightAnalyser.fftSize);
 
-            connectSourceToWorklet(source);
+            await connectSourceToWorklet(source);
 
             audioStream = stream;
             tabAudioActive = true;
@@ -222,7 +230,7 @@
         input.type = 'file';
         input.accept = 'audio/*';
 
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
@@ -248,7 +256,7 @@
                 splitter.connect(leftAnalyser, 0);
                 splitter.connect(rightAnalyser, 1);
 
-                connectSourceToWorklet(audioElementSource);
+                await connectSourceToWorklet(audioElementSource);
             }
 
             const url = URL.createObjectURL(file);
@@ -268,7 +276,7 @@
     /**
      * Play demo loops (cycles through demoLoops array on each call)
      */
-    function playLoop() {
+    async function playLoop() {
         if (loopAudioElement && !loopAudioElement.paused) {
             loopAudioElement.pause();
             loopAudioElement.currentTime = 0;
@@ -309,7 +317,7 @@
             splitter.connect(leftAnalyser, 0);
             splitter.connect(rightAnalyser, 1);
 
-            connectSourceToWorklet(loopAudioSource);
+            await connectSourceToWorklet(loopAudioSource);
         }
 
         loopAudioElement.src = 'demo-loops/' + loopFile;
@@ -325,14 +333,14 @@
     /**
      * Toggle demo oscillator
      */
-    function toggleDemo() {
+    async function toggleDemo() {
         demoMode = !demoMode;
 
         if (demoMode) {
             audioEnabled = false;
             audioFileMode = false;
             if (audioElement) audioElement.pause();
-            startDemoOscillator();
+            await startDemoOscillator();
         } else {
             stopDemoOscillator();
         }
@@ -343,7 +351,7 @@
     /**
      * Start demo sine oscillator (2 Hz for slow membrane sweep)
      */
-    function startDemoOscillator() {
+    async function startDemoOscillator() {
         if (demoOscillator) return;
 
         const worklet = _getWorklet();
@@ -359,7 +367,7 @@
         demoOscillator.frequency.value = 2.0;
         demoOscillator.connect(demoOscGain);
 
-        connectSourceToWorklet(demoOscGain);
+        await connectSourceToWorklet(demoOscGain);
 
         demoOscillator.start();
     }
@@ -438,6 +446,7 @@
     function init(options = {}) {
         _updateToggleStates = options.updateToggleStates || (() => {});
         _getWorklet = options.getWorklet || (() => null);
+        _ensureWorklet = options.ensureWorklet || (async () => null);
 
         return {
             toggleMic,
